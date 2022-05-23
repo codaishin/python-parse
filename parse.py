@@ -75,7 +75,7 @@ def _parse_value(value: Any, t_key: Any) -> Any:
     if _is_optional(t_key):
         return _parse_optional(value, t_key)
     if value is None:
-        raise ValueError()
+        raise _NullError()
     return _parse_required(value, t_key)
 
 
@@ -84,13 +84,17 @@ def _parse_key(data: dict, key: str, t_key: Any) -> Any:
         return _parse_value(data.get(key, None), t_key)
     except TypeError as err:
         raise TypeError(Parse.TYPE_ERROR.format(key=key, type=t_key)) from err
-    except ValueError as err:
+    except _NullError as err:
         raise KeyError(Parse.KEY_ERROR.format(key=key)) from err
 
 
 def _get_attributes(t_data: type, data: dict[str, Any]) -> dict[str, Any]:
     items = t_data.__annotations__.items()
     return {key: _parse_key(data, key, t_key) for key, t_key in items}
+
+
+class _NullError(Exception):
+    ...
 
 
 # pylint: disable=too-few-public-methods
