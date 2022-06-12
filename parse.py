@@ -2,7 +2,7 @@
 
 from dataclasses import is_dataclass
 from types import NoneType
-from typing import Any, Iterable, Optional, Type, TypeVar, Generic, get_args
+from typing import Any, Generic, Iterable, Optional, Type, TypeVar, get_args
 
 T = TypeVar("T")
 
@@ -79,7 +79,7 @@ def _parse_value(value: Any, t_key: Any) -> Any:
     return _parse_required(value, t_key)
 
 
-def _parse_key(data: dict, key: str, t_key: Any) -> Any:
+def _parse_key(data: dict[Any, Any], key: str, t_key: Any) -> Any:
     try:
         return _parse_value(data.get(key, None), t_key)
     except TypeError as err:
@@ -107,7 +107,7 @@ class Parse(Generic[T]):
     def __init__(self, target_type: Type[T]) -> None:
         self._target_type = target_type
 
-    def __call__(self, data: dict) -> T:
+    def __call__(self, data: dict[Any, Any]) -> T:
         attributes = _get_attributes(self._target_type, data)
 
         if is_dataclass(self._target_type):
