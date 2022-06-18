@@ -5,48 +5,54 @@ from test import UnitTests
 from typing import Generic, Iterable, Optional, TypeVar
 from unittest.mock import Mock
 
-from parse import Parse, SubParser, TMatchRating
+from parse import (
+    KEY_ERROR_MSG,
+    TYPE_ERROR_MSG,
+    TMatchRating,
+    ValueParser,
+    get_parser,
+)
 
 T = TypeVar("T")
 
 
-class TestParse(UnitTests):
-    """test Parse"""
+class TestGetParser(UnitTests):
+    """test get_parser"""
 
 
-@TestParse.describe("parse model")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("parse model")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Person:
         name: str
         age: int
 
-    to_person = Parse(_Person)
+    to_person = get_parser()(_Person)
     person = to_person({"name": "Harry", "age": 42})
     test.assertEqual((person.name, person.age), ("Harry", 42))
 
 
-@TestParse.describe("single value from a single item list")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("single value from a single item list")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Person:
         name: str
         age: int
 
-    to_person = Parse(_Person)
+    to_person = get_parser()(_Person)
     person = to_person({"name": ["Harry"], "age": [42]})
     test.assertEqual((person.name, person.age), ("Harry", 42))
 
 
-@TestParse.describe("parse single optional value")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("parse single optional value")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Person:
         name: Optional[str]
         age: Optional[int]
         birthday: Optional[date]
 
-    to_person = Parse(_Person)
+    to_person = get_parser()(_Person)
     person = to_person({"age": None, "birthday": date(2000, 1, 1)})
     test.assertEqual(
         (person.name, person.age, person.birthday),
@@ -54,51 +60,51 @@ def _(test: TestParse) -> None:
     )
 
 
-@TestParse.describe("parse list with optional value")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("parse list with optional value")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Person:
         names: list[Optional[str]]
 
-    to_person = Parse(_Person)
+    to_person = get_parser()(_Person)
     person = to_person({"names": ["Rudy", None]})
     test.assertListEqual(person.names, ["Rudy", None])
 
 
-@TestParse.describe("missing key")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("missing key")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Person:
         name: str
         age: int
 
-    to_person = Parse(_Person)
+    to_person = get_parser()(_Person)
     with test.assertRaises(KeyError) as ctx:
         _ = to_person({"age": 33})
 
-    msg = Parse.KEY_ERROR.format(key="name")
+    msg = KEY_ERROR_MSG.format(key="name")
     error = KeyError(msg)
     test.assertEqual(str(error), str(ctx.exception))
 
 
-@TestParse.describe("type mismatch")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("type mismatch")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Car:
         max_speed: int
         seats: int
 
-    to_car = Parse(_Car)
+    to_car = get_parser()(_Car)
     with test.assertRaises(TypeError) as ctx:
         _ = to_car({"max_speed": "foo", "seats": "bar"})
 
-    msg = Parse.TYPE_ERROR.format(key="max_speed", type=int)
+    msg = TYPE_ERROR_MSG.format(key="max_speed", type=int)
     error = TypeError(msg)
     test.assertEqual(str(error), str(ctx.exception))
 
 
-@TestParse.describe("type mismatch for generic annotation")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("type mismatch for generic annotation")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Generic(Generic[T]):
         pass
@@ -107,17 +113,17 @@ def _(test: TestParse) -> None:
     class _Mock:
         field: _Generic[int]
 
-    to_mock = Parse(_Mock)
+    to_mock = get_parser()(_Mock)
     with test.assertRaises(TypeError) as ctx:
         _ = to_mock({"field": 32})
 
-    msg = Parse.TYPE_ERROR.format(key="field", type=_Generic[int])
+    msg = TYPE_ERROR_MSG.format(key="field", type=_Generic[int])
     error = TypeError(msg)
     test.assertEqual(str(error), str(ctx.exception))
 
 
-@TestParse.describe("parse nested")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("parse nested")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Address:
         street: str
@@ -129,7 +135,7 @@ def _(test: TestParse) -> None:
         name: str
         age: int
 
-    to_person = Parse(_Person)
+    to_person = get_parser()(_Person)
     person = to_person(
         {
             "name": "Jenny",
@@ -151,8 +157,8 @@ def _(test: TestParse) -> None:
     )
 
 
-@TestParse.describe("optional nested")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("optional nested")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Address:
         street: str
@@ -163,7 +169,7 @@ def _(test: TestParse) -> None:
         snd_address: Optional[_Address]
         trd_address: Optional[_Address]
 
-    to_person = Parse(_Person)
+    to_person = get_parser()(_Person)
     person = to_person(
         {
             "fst_address": {"street": "Sesame Street"},
@@ -182,27 +188,27 @@ def _(test: TestParse) -> None:
     )
 
 
-@TestParse.describe("parse dataclass")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("parse dataclass")
+def _(test: TestGetParser) -> None:
     @dataclass
     class _Person:
         name: str
         age: int
 
-    to_person = Parse(_Person)
+    to_person = get_parser()(_Person)
     person = to_person({"name": "Harry", "age": 42})
     test.assertEqual((person.name, person.age), ("Harry", 42))
 
 
-@TestParse.describe("only parse annotations")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("only parse annotations")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Person:
         name: str
         age: int
         species = "Human"
 
-    to_person = Parse(_Person)
+    to_person = get_parser()(_Person)
     person = to_person({"name": "Harry", "age": 42, "species": "Martian"})
     test.assertEqual(
         (person.name, person.age, person.species),
@@ -210,13 +216,13 @@ def _(test: TestParse) -> None:
     )
 
 
-@TestParse.describe("can parse list field")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("can parse list field")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Path:
         nodes: list[str]
 
-    to_path = Parse(_Path)
+    to_path = get_parser()(_Path)
     path = to_path({"nodes": ["path", "to", "target"]})
     test.assertIsInstance(path.nodes, list)
     test.assertListEqual(
@@ -225,13 +231,13 @@ def _(test: TestParse) -> None:
     )
 
 
-@TestParse.describe("can parse tuple field")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("can parse tuple field")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Path:
         nodes: tuple[str]
 
-    to_path = Parse(_Path)
+    to_path = get_parser()(_Path)
     path = to_path({"nodes": ["path", "to", "target"]})
     test.assertIsInstance(path.nodes, tuple)
     test.assertListEqual(
@@ -240,13 +246,13 @@ def _(test: TestParse) -> None:
     )
 
 
-@TestParse.describe("can parse Iterable field")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("can parse Iterable field")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Path:
         nodes: Iterable[str]
 
-    to_path = Parse(_Path)
+    to_path = get_parser()(_Path)
     path = to_path({"nodes": ["path", "to", "target"]})
     test.assertIsInstance(path.nodes, tuple)
     test.assertListEqual(
@@ -255,8 +261,8 @@ def _(test: TestParse) -> None:
     )
 
 
-@TestParse.describe("can add Age parser")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("can add Age parser")
+def _(test: TestGetParser) -> None:
     class _Age(int):
         ...
 
@@ -264,7 +270,7 @@ def _(test: TestParse) -> None:
     class _Person:
         age: _Age
 
-    class _AgeParser(SubParser[int, _Age]):
+    class _AgeParser(ValueParser[int, _Age]):
         def __init__(self) -> None:
             super().__init__(int, _Age)
 
@@ -278,13 +284,13 @@ def _(test: TestParse) -> None:
         def parse(self, value: int) -> _Age:
             return _Age(value)
 
-    to_person = Parse(_Person, (_AgeParser(),))
+    to_person = get_parser(_AgeParser())(_Person)
     person = to_person({"age": 5})
     test.assertEqual(_Person(age=_Age(5)), person)
 
 
-@TestParse.describe("can add Age parser for nested parsing")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("can add Age parser for nested parsing")
+def _(test: TestGetParser) -> None:
     class _Age(int):
         ...
 
@@ -296,7 +302,7 @@ def _(test: TestParse) -> None:
     class _PersonList:
         persons: list[_Person]
 
-    class _AgeParser(SubParser[int, _Age]):
+    class _AgeParser(ValueParser[int, _Age]):
         def __init__(self) -> None:
             super().__init__(int, _Age)
 
@@ -310,7 +316,7 @@ def _(test: TestParse) -> None:
         def parse(self, value: int) -> _Age:
             return _Age(value)
 
-    to_person = Parse(_PersonList, (_AgeParser(),))
+    to_person = get_parser(_AgeParser())(_PersonList)
     person_list = to_person({"persons": [{"age": 5}]})
     test.assertEqual(
         _PersonList(persons=[_Person(age=_Age(5))]),
@@ -318,8 +324,8 @@ def _(test: TestParse) -> None:
     )
 
 
-@TestParse.describe("use best match")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("use best match")
+def _(test: TestGetParser) -> None:
     class _Age(int):
         ...
 
@@ -327,7 +333,7 @@ def _(test: TestParse) -> None:
     class _Person:
         age: _Age
 
-    class _AgeParser(SubParser[int, _Age]):
+    class _AgeParser(ValueParser[int, _Age]):
         def __init__(self, match: int) -> None:
             super().__init__(int, _Age)
             self._match = match
@@ -342,13 +348,13 @@ def _(test: TestParse) -> None:
         def parse(self, value: int) -> _Age:
             return _Age(value * self._match)
 
-    to_person = Parse(_Person, (_AgeParser(1), _AgeParser(2)))
+    to_person = get_parser(_AgeParser(1), _AgeParser(2))(_Person)
     person = to_person({"age": 5})
     test.assertEqual(_Person(age=_Age(10)), person)
 
 
-@TestParse.describe("pass source and target type to sub parser's match()")
-def _(_: TestParse) -> None:
+@TestGetParser.describe("pass source and target type to sub parser's match()")
+def _(_: TestGetParser) -> None:
     class _Age(int):
         ...
 
@@ -356,22 +362,22 @@ def _(_: TestParse) -> None:
     class _Person:
         age: _Age
 
-    parser = Mock(
+    sub_parser = Mock(
         source_type=int,
         target_type=_Age,
         match=Mock(return_value=1),
     )
 
-    to_person = Parse(_Person, (parser,))
+    to_person = get_parser(sub_parser)(_Person)
     __ = to_person({"age": 5})
 
-    parser.match.assert_called_once_with(int, _Age)
+    sub_parser.match.assert_called_once_with(int, _Age)
 
 
-@TestParse.describe(
+@TestGetParser.describe(
     "pass source and target type to multiple sub parsers' match()"
 )
-def _(test: TestParse) -> None:
+def _(test: TestGetParser) -> None:
     class _Age(int):
         ...
 
@@ -379,30 +385,30 @@ def _(test: TestParse) -> None:
     class _Person:
         age: _Age
 
-    def get_parser() -> Mock:
+    def get_sub_parser() -> Mock:
         return Mock(
             source_type=int,
             target_type=_Age,
             match=Mock(return_value=1),
         )
 
-    parsers = (get_parser(), get_parser(), get_parser())
+    sub_parsers = (get_sub_parser(), get_sub_parser(), get_sub_parser())
 
-    to_person = Parse(_Person, parsers)
+    to_person = get_parser(*sub_parsers)(_Person)
     __ = to_person({"age": 5})
 
-    for i, parser in enumerate(parsers):
+    for i, parser in enumerate(sub_parsers):
         with test.subTest(f"test parsers {i}"):
             parser.match.assert_called_once_with(int, _Age)
 
 
-@TestParse.describe("evaluate TSource outside of sub parser's match")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("evaluate TSource outside of sub parser's match")
+def _(test: TestGetParser) -> None:
     @dataclass
     class _Person:
         age: float
 
-    class _StrToFloat(SubParser[str, float]):
+    class _StrToFloat(ValueParser[str, float]):
         def __init__(self) -> None:
             super().__init__(str, float)
 
@@ -416,18 +422,18 @@ def _(test: TestParse) -> None:
         def parse(self, value: str) -> float:
             return float(value)
 
-    to_person = Parse(_Person, (_StrToFloat(),))
+    to_person = get_parser(_StrToFloat())(_Person)
     with test.assertRaises(TypeError):
         _ = to_person({"age": 5})
 
 
-@TestParse.describe("evaluate TTarget outside of sub parser's match")
-def _(test: TestParse) -> None:
+@TestGetParser.describe("evaluate TTarget outside of sub parser's match")
+def _(test: TestGetParser) -> None:
     @dataclass
     class _Person:
         age: int
 
-    class _StrToFloat(SubParser[str, float]):
+    class _StrToFloat(ValueParser[str, float]):
         def __init__(self) -> None:
             super().__init__(str, float)
 
@@ -441,6 +447,6 @@ def _(test: TestParse) -> None:
         def parse(self, value: str) -> float:
             return float(value)
 
-    to_person = Parse(_Person, (_StrToFloat(),))
+    to_person = get_parser(_StrToFloat())(_Person)
     with test.assertRaises(TypeError):
         _ = to_person({"age": "5.1"})

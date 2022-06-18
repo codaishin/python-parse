@@ -3,6 +3,7 @@
 from abc import abstractmethod
 from dataclasses import is_dataclass
 from functools import reduce
+from inspect import get_annotations
 from types import NoneType
 from typing import (
     Any,
@@ -18,11 +19,15 @@ from typing import (
 T = TypeVar("T")
 TTarget = TypeVar("TTarget")
 TSource = TypeVar("TSource")
+TParseFunc = Callable[[dict[Any, Any]], T]
 TMatchRating = int
 
+TYPE_ERROR_MSG = "'{key}' in data not compatible with '{type}'"
+KEY_ERROR_MSG = "'{key}' not found in data"
 
-class SubParser(Generic[TSource, TTarget]):
-    """parser interface"""
+
+class ValueParser(Generic[TSource, TTarget]):
+    """abstract value parser"""
 
     def __init__(
         self,
@@ -55,7 +60,7 @@ class SubParser(Generic[TSource, TTarget]):
         """execute the paring"""
 
 
-class _TypeError(SubParser[Any, Any]):
+class _NeverMatch(ValueParser[Any, Any]):
     def __init__(self) -> None:
         super().__init__(object, object)
 
@@ -68,6 +73,10 @@ class _TypeError(SubParser[Any, Any]):
 
     def parse(self, value: TSource) -> TTarget:
         raise TypeError()
+
+
+class _NullError(Exception):
+    ...
 
 
 def _init_and_setattr(cls: Type[T], attributes: dict[str, Any]) -> T:
@@ -111,31 +120,31 @@ def _is_optional(t_key: Any) -> bool:
 
 def _parse_required(
     value: Any,
-    t_key: Any,
-    sub_parsers: tuple[SubParser[Any, Any], ...],
+    t_key: type,
+    value_parsers: tuple[ValueParser[Any, Any], ...],
 ) -> Any:
     if _is_iterable(t_key, value, list):
         (t_key,) = get_args(t_key)
-        return [_parse_value(e, t_key, sub_parsers) for e in value]
+        return [_parse_value(e, t_key, value_parsers) for e in value]
     if _is_iterable(t_key, value, tuple, Iterable):
         (t_key,) = get_args(t_key)
-        return tuple((_parse_value(e, t_key, sub_parsers) for e in value))
+        return tuple((_parse_value(e, t_key, value_parsers) for e in value))
     if isinstance(value, dict):
-        parse = Parse(t_key, sub_parsers)
+        parse: TParseFunc[Any] = get_parser(*value_parsers)(t_key)
         return parse(value)
     if isinstance(value, t_key):
         return value
     if isinstance(value, (list, tuple)) and len(value) == 1:
-        return _parse_value(value[0], t_key, sub_parsers)
-    value_parser = _get_best_sub_parser(sub_parsers, type(value), t_key)
+        return _parse_value(value[0], t_key, value_parsers)
+    value_parser = _get_best_value_parser(value_parsers, type(value), t_key)
     return value_parser.parse(value)
 
 
-TSubParseData = tuple[SubParser[Any, Any], TMatchRating]
+TValueParserData = tuple[ValueParser[Any, Any], TMatchRating]
 
 
 def _get_match(
-    sub_parser: SubParser[Any, Any],
+    sub_parser: ValueParser[Any, Any],
     source_type: type,
     target_type: type,
 ) -> TMatchRating:
@@ -149,8 +158,11 @@ def _get_match(
 def _best_parser_for(
     source_type: type,
     target_type: type,
-) -> Callable[[TSubParseData, SubParser[Any, Any]], TSubParseData,]:
-    def run(aggr: TSubParseData, crnt: SubParser[Any, Any]) -> TSubParseData:
+) -> Callable[[TValueParserData, ValueParser[Any, Any]], TValueParserData,]:
+    def run(
+        aggr: TValueParserData,
+        crnt: ValueParser[Any, Any],
+    ) -> TValueParserData:
         crnt_match = _get_match(crnt, source_type, target_type)
         (_, aggr_match) = aggr
         if crnt_match > aggr_match:
@@ -160,16 +172,16 @@ def _best_parser_for(
     return run
 
 
-def _get_best_sub_parser(
-    sub_parsers: tuple[SubParser[Any, Any], ...],
+def _get_best_value_parser(
+    value_parsers: tuple[ValueParser[Any, Any], ...],
     source_type: type,
     target_type: type,
-) -> SubParser[Any, Any]:
-    type_error: SubParser[Any, Any] = _TypeError()
+) -> ValueParser[Any, Any]:
+    never_match: ValueParser[Any, Any] = _NeverMatch()
     (parser, _) = reduce(
         _best_parser_for(source_type, target_type),
-        sub_parsers,
-        (type_error, 0),
+        value_parsers,
+        (never_match, 0),
     )
     return parser
 
@@ -177,7 +189,7 @@ def _get_best_sub_parser(
 def _parse_optional(
     value: Any,
     t_key: Any,
-    sub_parsers: tuple[SubParser[Any, Any], ...],
+    sub_parsers: tuple[ValueParser[Any, Any], ...],
 ) -> Any:
     if value is None:
         return None
@@ -189,7 +201,7 @@ def _parse_optional(
 def _parse_value(
     value: Any,
     t_key: Any,
-    sub_parsers: tuple[SubParser[Any, Any], ...],
+    sub_parsers: tuple[ValueParser[Any, Any], ...],
 ) -> Any:
     if _is_optional(t_key):
         return _parse_optional(value, t_key, sub_parsers)
@@ -202,53 +214,44 @@ def _parse_key(
     data: dict[Any, Any],
     key: str,
     t_key: Any,
-    sub_parsers: tuple[SubParser[Any, Any], ...],
+    sub_parsers: tuple[ValueParser[Any, Any], ...],
 ) -> Any:
     try:
         return _parse_value(data.get(key, None), t_key, sub_parsers)
     except TypeError as err:
-        raise TypeError(Parse.TYPE_ERROR.format(key=key, type=t_key)) from err
+        raise TypeError(TYPE_ERROR_MSG.format(key=key, type=t_key)) from err
     except _NullError as err:
-        raise KeyError(Parse.KEY_ERROR.format(key=key)) from err
+        raise KeyError(KEY_ERROR_MSG.format(key=key)) from err
 
 
 def _get_attributes(
     t_data: type,
-    sub_parsers: tuple[SubParser[Any, Any], ...],
+    sub_parsers: tuple[ValueParser[Any, Any], ...],
     data: dict[str, Any],
 ) -> dict[str, Any]:
-    items = t_data.__annotations__.items()
+    annotations = get_annotations(t_data).items()
     return {
-        key: _parse_key(data, key, t_key, sub_parsers) for key, t_key in items
+        key: _parse_key(data, key, t_key, sub_parsers)
+        for key, t_key in annotations
     }
 
 
-class _NullError(Exception):
-    ...
+def get_parser(
+    *sub_parsers: ValueParser[Any, Any]
+) -> Callable[[Type[T]], TParseFunc[T]]:
+    """get parser"""
 
+    def parse_lazy(target_type: Type[T]) -> TParseFunc[T]:
+        def parse(data: dict[Any, Any]) -> T:
+            attributes = _get_attributes(
+                target_type,
+                sub_parsers,
+                data,
+            )
+            if is_dataclass(target_type):
+                return _init_kwargs(target_type, attributes)
+            return _init_and_setattr(target_type, attributes)
 
-# pylint: disable=too-few-public-methods
-class Parse(Generic[T]):
-    """Parse"""
+        return parse
 
-    TYPE_ERROR = "'{key}' in data not compatible with '{type}'"
-    KEY_ERROR = "'{key}' not found in data"
-
-    def __init__(
-        self,
-        target_type: Type[T],
-        sub_parsers: tuple[SubParser[Any, Any], ...] = (),
-    ) -> None:
-        self._target_type = target_type
-        self._sub_parsers = sub_parsers
-
-    def __call__(self, data: dict[Any, Any]) -> T:
-        attributes = _get_attributes(
-            self._target_type,
-            self._sub_parsers,
-            data,
-        )
-
-        if is_dataclass(self._target_type):
-            return _init_kwargs(self._target_type, attributes)
-        return _init_and_setattr(self._target_type, attributes)
+    return parse_lazy
