@@ -29,6 +29,7 @@ def _(test: TestGetParserDefault) -> None:
 
     to_person = get_parser_default()(_Person)
     person = to_person({"name": "Harry", "age": 42})
+    assert person
     test.assertEqual((person.name, person.age), ("Harry", 42))
 
 
@@ -41,6 +42,7 @@ def _(test: TestGetParserDefault) -> None:
 
     to_person = get_parser_default()(_Person)
     person = to_person({"name": ["Harry"], "age": [42]})
+    assert person
     test.assertEqual((person.name, person.age), ("Harry", 42))
 
 
@@ -54,6 +56,7 @@ def _(test: TestGetParserDefault) -> None:
 
     to_person = get_parser_default()(_Person)
     person = to_person({"age": None, "birthday": date(2000, 1, 1)})
+    assert person
     test.assertEqual(
         (person.name, person.age, person.birthday),
         (None, None, date(2000, 1, 1)),
@@ -68,6 +71,7 @@ def _(test: TestGetParserDefault) -> None:
 
     to_person = get_parser_default()(_Person)
     person = to_person({"names": ["Rudy", None]})
+    assert person
     test.assertListEqual(person.names, ["Rudy", None])
 
 
@@ -146,6 +150,7 @@ def _(test: TestGetParserDefault) -> None:
             },
         }
     )
+    assert person
     test.assertEqual(
         (
             person.name,
@@ -177,6 +182,7 @@ def _(test: TestGetParserDefault) -> None:
         }
     )
 
+    assert person
     assert person.fst_address
     test.assertEqual(
         (
@@ -197,6 +203,7 @@ def _(test: TestGetParserDefault) -> None:
 
     to_person = get_parser_default()(_Person)
     person = to_person({"name": "Harry", "age": 42})
+    assert person
     test.assertEqual((person.name, person.age), ("Harry", 42))
 
 
@@ -210,6 +217,7 @@ def _(test: TestGetParserDefault) -> None:
 
     to_person = get_parser_default()(_Person)
     person = to_person({"name": "Harry", "age": 42, "species": "Martian"})
+    assert person
     test.assertEqual(
         (person.name, person.age, person.species),
         ("Harry", 42, "Human"),
@@ -224,6 +232,7 @@ def _(test: TestGetParserDefault) -> None:
 
     to_path = get_parser_default()(_Path)
     path = to_path({"nodes": ["path", "to", "target"]})
+    assert path
     test.assertIsInstance(path.nodes, list)
     test.assertListEqual(
         path.nodes,
@@ -239,6 +248,7 @@ def _(test: TestGetParserDefault) -> None:
 
     to_path = get_parser_default()(_Path)
     path = to_path({"nodes": ["path", "to", "target"]})
+    assert path
     test.assertIsInstance(path.nodes, tuple)
     test.assertListEqual(
         list(path.nodes),
@@ -254,6 +264,7 @@ def _(test: TestGetParserDefault) -> None:
 
     to_path = get_parser_default()(_Path)
     path = to_path({"nodes": ["path", "to", "target"]})
+    assert path
     test.assertIsInstance(path.nodes, tuple)
     test.assertListEqual(
         list(path.nodes),
@@ -419,3 +430,38 @@ def _(test: TestGetParserDefault) -> None:
     to_person = get_parser_default(_StrToFloat())(_Person)
     with test.assertRaises(TypeError):
         _ = to_person({"age": "5.1"})
+
+
+@TestGetParserDefault.describe("parse str")
+def _(test: TestGetParserDefault) -> None:
+    to_string = get_parser_default()(str)
+    test.assertEqual(to_string("hello"), "hello")
+
+
+@TestGetParserDefault.describe("parse tuple[str]")
+def _(test: TestGetParserDefault) -> None:
+    to_tuple = get_parser_default()(tuple[str, ...])
+    test.assertEqual(to_tuple(("hello", "world")), ("hello", "world"))
+
+
+@TestGetParserDefault.describe("parse tuple[_Age]")
+def _(test: TestGetParserDefault) -> None:
+    class _Age(int):
+        ...
+
+    class _AgeParser(IParser[_Age]):
+        def match(self, source_type: type, target_type: type) -> TMatchRating:
+            return 2
+
+        def parse(self, value: Any) -> _Age:
+            return _Age(value)
+
+    to_tuple = get_parser_default(_AgeParser())(tuple[_Age, ...])
+    test.assertEqual(to_tuple((4, 6)), (_Age(4), _Age(6)))
+
+
+@TestGetParserDefault.describe("parse tuple item type mismatch")
+def _(test: TestGetParserDefault) -> None:
+    to_tuple = get_parser_default()(tuple[str])
+    with test.assertRaises(TypeError):
+        _ = to_tuple((1, 2, 3))

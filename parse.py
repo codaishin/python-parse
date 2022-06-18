@@ -10,16 +10,18 @@ from typing import (
     Callable,
     Generic,
     Iterable,
-    Optional,
     TypeVar,
+    Union,
     get_args,
+    get_origin,
 )
 
 T = TypeVar("T")
 TTarget = TypeVar("TTarget")
 TSource = TypeVar("TSource")
-TParseFunc = Callable[[Any], T]
+TParseFunc = Callable[[Any], T | None]
 TMatchRating = int
+TParserData = tuple["IParser[Any]", TMatchRating]
 
 TYPE_ERROR_MSG = "'{key}' in data not compatible with '{type}'"
 KEY_ERROR_MSG = "'{key}' not found in data"
@@ -44,7 +46,7 @@ class IParser(Generic[TTarget]):
         """
 
     @abstractmethod
-    def parse(self, value: Any) -> TTarget:
+    def parse(self, value: object | None) -> TTarget:
         """parse the provided value to the target type"""
 
 
@@ -63,11 +65,21 @@ class MatchSubtype(IParser[object]):
         return value
 
 
-DEFAULT_VALUE_PARSERS = (MatchSubtype(),)
+class MatchNone(IParser[None]):
+    """
+    Applied to source values that are None.
+
+    If valid: has a match rating of 1
+    """
+
+    def match(self, source_type: type, target_type: type) -> TMatchRating:
+        return 1 if issubclass(source_type, NoneType) else 0
+
+    def parse(self, value: object) -> None:
+        return None
 
 
-class _NullError(Exception):
-    ...
+DEFAULT_VALUE_PARSERS = (MatchSubtype(), MatchNone())
 
 
 def _init_and_setattr(cls: type[T], attributes: dict[str, Any]) -> T:
@@ -90,10 +102,7 @@ def _is_iterable_candidate(t_key: Any, value: Any) -> bool:
 
 
 def _origin(value: Any) -> Any:
-    try:
-        return value.__origin__
-    except AttributeError:
-        return value
+    return get_origin(value) or value
 
 
 def _is_iterable(t_key: Any, value: Any, *assert_types: Any) -> bool:
@@ -103,40 +112,6 @@ def _is_iterable(t_key: Any, value: Any, *assert_types: Any) -> bool:
         if _origin(t_key) is _origin(assert_type):
             return True
     return False
-
-
-def _is_optional(t_key: Any) -> bool:
-    return _origin(t_key) is _origin(Optional[Any])
-
-
-def _parse_required(
-    value: Any,
-    t_key: type,
-    value_parsers: tuple[IParser[Any], ...],
-) -> Any:
-    if _is_iterable(t_key, value, list):
-        (t_key,) = get_args(t_key)
-        return [_parse_value(e, t_key, value_parsers) for e in value]
-    if _is_iterable(t_key, value, tuple, Iterable):
-        (t_key,) = get_args(t_key)
-        return tuple((_parse_value(e, t_key, value_parsers) for e in value))
-    if isinstance(value, dict):
-        parse: TParseFunc[Any] = get_parser(*value_parsers)(t_key)
-        return parse(value)
-    if isinstance(value, (list, tuple)) and len(value) == 1:
-        return _parse_value(value[0], t_key, value_parsers)
-    if not value_parsers:
-        raise TypeError()
-    (parse, match) = _get_best_value_parser(value_parsers, type(value), t_key)
-    if not match:
-        raise TypeError()
-    parsed_value = parse(value)
-    if not isinstance(parsed_value, t_key):
-        raise TypeError()
-    return parsed_value
-
-
-TParserData = tuple[IParser[Any], TMatchRating]
 
 
 def _best_parser_for(
@@ -167,62 +142,101 @@ def _get_best_value_parser(
     return parser.parse, best_match
 
 
-def _parse_optional(
-    value: Any,
-    t_key: Any,
-    sub_parsers: tuple[IParser[Any], ...],
-) -> Any:
-    if value is None:
-        return None
-
-    (t_key,) = (t for t in get_args(t_key) if t is not NoneType)
-    return _parse_required(value, t_key, sub_parsers)
-
-
 def _parse_value(
     value: Any,
     t_key: Any,
-    sub_parsers: tuple[IParser[Any], ...],
+    value_parsers: tuple[IParser[Any], ...],
 ) -> Any:
-    if _is_optional(t_key):
-        return _parse_optional(value, t_key, sub_parsers)
-    if value is None:
-        raise _NullError()
-    return _parse_required(value, t_key, sub_parsers)
+    parse: TParseFunc[Any]
+    if _is_iterable(t_key, value, list):
+        (t_key,) = get_args(t_key)
+        parse = get_parser(*value_parsers)(t_key)
+        return [parse(e) for e in value]
+    if _is_iterable(t_key, value, tuple, Iterable):
+        (t_key, *_) = get_args(t_key)
+        parse = get_parser(*value_parsers)(t_key)
+        return tuple((parse(e) for e in value))
+    if isinstance(value, dict):
+        parse = get_parser(*value_parsers)(t_key)
+        return parse(value)
+    if isinstance(value, (list, tuple)) and len(value) == 1:
+        parse = get_parser(*value_parsers)(t_key)
+        return parse(value[0])
+    if not value_parsers:
+        raise TypeError()
+    (parse, match) = _get_best_value_parser(value_parsers, type(value), t_key)
+    if not match:
+        raise TypeError()
+    return parse(value)
 
 
 def _parse_key(
     data: dict[Any, Any],
     key: str,
-    t_key: Any,
-    sub_parsers: tuple[IParser[Any], ...],
+    t_key: type,
+    value_parsers: tuple[IParser[Any], ...],
 ) -> Any:
     try:
-        return _parse_value(data.get(key, None), t_key, sub_parsers)
+        t_key, optional = _get_optional_or_orig(t_key)
+        value = data.get(key) if optional else data[key]
+        return _parse_flat(t_key, value_parsers, value, optional)
     except TypeError as err:
         raise TypeError(TYPE_ERROR_MSG.format(key=key, type=t_key)) from err
-    except _NullError as err:
+    except KeyError as err:
         raise KeyError(KEY_ERROR_MSG.format(key=key)) from err
 
 
 def _get_attributes(
-    t_data: type,
+    annotations: dict[str, type],
     sub_parsers: tuple[IParser[Any], ...],
     data: dict[str, Any],
 ) -> dict[str, Any]:
-    annotations = get_annotations(t_data).items()
     return {
         key: _parse_key(data, key, t_key, sub_parsers)
-        for key, t_key in annotations
+        for key, t_key in annotations.items()
     }
+
+
+def _parse_flat(
+    target_type: type[T],
+    value_parsers: tuple[IParser[Any], ...],
+    data: Any,
+    optional: bool,
+) -> T | None:
+    parsed = _parse_value(data, target_type, value_parsers)
+
+    if optional and parsed is None:
+        return None
+
+    target_origin: type[T] = _origin(target_type)
+    if isinstance(parsed, target_origin):
+        return parsed
+
+    raise TypeError()
+
+
+def _get_optional_or_orig(_type: type) -> tuple[type, bool]:
+    if _origin(_type) is Union:
+        (_type,) = (t for t in get_args(_type) if t is not NoneType)
+        return _type, True
+    return _type, False
 
 
 def _parse(
     value_parsers: tuple[IParser[Any], ...],
     target_type: type[T],
-    data: dict[Any, Any],
-) -> T:
-    attributes = _get_attributes(target_type, value_parsers, data)
+    data: Any,
+) -> T | None:
+    (target_type, optional) = _get_optional_or_orig(target_type)
+    if not isinstance(data, dict):
+        return _parse_flat(target_type, value_parsers, data, optional)
+
+    annotations = get_annotations(target_type)
+    attributes = _get_attributes(annotations, value_parsers, data)
+
+    if optional and attributes is None:
+        return None
+
     if is_dataclass(target_type):
         return _init_kwargs(target_type, attributes)
     return _init_and_setattr(target_type, attributes)
@@ -233,10 +247,10 @@ def get_parser(
 ) -> Callable[[type[T]], TParseFunc[T]]:
     """get parser func that uses the provided value parsers"""
 
-    def parse_partial(target_type: type[T]) -> TParseFunc[T]:
+    def partial_parse(target_type: type[T]) -> TParseFunc[T]:
         return partial(_parse, value_parsers, target_type)
 
-    return parse_partial
+    return partial_parse
 
 
 def get_parser_default(
