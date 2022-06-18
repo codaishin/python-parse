@@ -1,9 +1,11 @@
 """test parse"""
 from dataclasses import dataclass
 from datetime import date
-from typing import Generic, Iterable, Optional, TypeVar
 from test import UnitTests
-from parse import Parse
+from typing import Generic, Iterable, Optional, TypeVar
+from unittest.mock import Mock
+
+from parse import Parse, SubParser, TMatchRating
 
 T = TypeVar("T")
 
@@ -251,3 +253,194 @@ def _(test: TestParse) -> None:
         list(path.nodes),
         ["path", "to", "target"],
     )
+
+
+@TestParse.describe("can add Age parser")
+def _(test: TestParse) -> None:
+    class _Age(int):
+        ...
+
+    @dataclass
+    class _Person:
+        age: _Age
+
+    class _AgeParser(SubParser[int, _Age]):
+        def __init__(self) -> None:
+            super().__init__(int, _Age)
+
+        def match(
+            self,
+            source_type: type[int],
+            target_type: type[_Age],
+        ) -> TMatchRating:
+            return 1
+
+        def parse(self, value: int) -> _Age:
+            return _Age(value)
+
+    to_person = Parse(_Person, (_AgeParser(),))
+    person = to_person({"age": 5})
+    test.assertEqual(_Person(age=_Age(5)), person)
+
+
+@TestParse.describe("can add Age parser for nested parsing")
+def _(test: TestParse) -> None:
+    class _Age(int):
+        ...
+
+    @dataclass
+    class _Person:
+        age: _Age
+
+    @dataclass
+    class _PersonList:
+        persons: list[_Person]
+
+    class _AgeParser(SubParser[int, _Age]):
+        def __init__(self) -> None:
+            super().__init__(int, _Age)
+
+        def match(
+            self,
+            source_type: type[int],
+            target_type: type[_Age],
+        ) -> TMatchRating:
+            return 1
+
+        def parse(self, value: int) -> _Age:
+            return _Age(value)
+
+    to_person = Parse(_PersonList, (_AgeParser(),))
+    person_list = to_person({"persons": [{"age": 5}]})
+    test.assertEqual(
+        _PersonList(persons=[_Person(age=_Age(5))]),
+        person_list,
+    )
+
+
+@TestParse.describe("use best match")
+def _(test: TestParse) -> None:
+    class _Age(int):
+        ...
+
+    @dataclass
+    class _Person:
+        age: _Age
+
+    class _AgeParser(SubParser[int, _Age]):
+        def __init__(self, match: int) -> None:
+            super().__init__(int, _Age)
+            self._match = match
+
+        def match(
+            self,
+            source_type: type[int],
+            target_type: type[_Age],
+        ) -> TMatchRating:
+            return self._match
+
+        def parse(self, value: int) -> _Age:
+            return _Age(value * self._match)
+
+    to_person = Parse(_Person, (_AgeParser(1), _AgeParser(2)))
+    person = to_person({"age": 5})
+    test.assertEqual(_Person(age=_Age(10)), person)
+
+
+@TestParse.describe("pass source and target type to sub parser's match()")
+def _(_: TestParse) -> None:
+    class _Age(int):
+        ...
+
+    @dataclass
+    class _Person:
+        age: _Age
+
+    parser = Mock(
+        source_type=int,
+        target_type=_Age,
+        match=Mock(return_value=1),
+    )
+
+    to_person = Parse(_Person, (parser,))
+    __ = to_person({"age": 5})
+
+    parser.match.assert_called_once_with(int, _Age)
+
+
+@TestParse.describe(
+    "pass source and target type to multiple sub parsers' match()"
+)
+def _(test: TestParse) -> None:
+    class _Age(int):
+        ...
+
+    @dataclass
+    class _Person:
+        age: _Age
+
+    def get_parser() -> Mock:
+        return Mock(
+            source_type=int,
+            target_type=_Age,
+            match=Mock(return_value=1),
+        )
+
+    parsers = (get_parser(), get_parser(), get_parser())
+
+    to_person = Parse(_Person, parsers)
+    __ = to_person({"age": 5})
+
+    for i, parser in enumerate(parsers):
+        with test.subTest(f"test parsers {i}"):
+            parser.match.assert_called_once_with(int, _Age)
+
+
+@TestParse.describe("evaluate TSource outside of sub parser's match")
+def _(test: TestParse) -> None:
+    @dataclass
+    class _Person:
+        age: float
+
+    class _StrToFloat(SubParser[str, float]):
+        def __init__(self) -> None:
+            super().__init__(str, float)
+
+        def match(
+            self,
+            source_type: type[str],
+            target_type: type[float],
+        ) -> TMatchRating:
+            return 1
+
+        def parse(self, value: str) -> float:
+            return float(value)
+
+    to_person = Parse(_Person, (_StrToFloat(),))
+    with test.assertRaises(TypeError):
+        _ = to_person({"age": 5})
+
+
+@TestParse.describe("evaluate TTarget outside of sub parser's match")
+def _(test: TestParse) -> None:
+    @dataclass
+    class _Person:
+        age: int
+
+    class _StrToFloat(SubParser[str, float]):
+        def __init__(self) -> None:
+            super().__init__(str, float)
+
+        def match(
+            self,
+            source_type: type[str],
+            target_type: type[float],
+        ) -> TMatchRating:
+            return 1
+
+        def parse(self, value: str) -> float:
+            return float(value)
+
+    to_person = Parse(_Person, (_StrToFloat(),))
+    with test.assertRaises(TypeError):
+        _ = to_person({"age": "5.1"})
