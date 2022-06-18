@@ -11,7 +11,6 @@ from typing import (
     Generic,
     Iterable,
     Optional,
-    Type,
     TypeVar,
     get_args,
 )
@@ -31,19 +30,19 @@ class ValueParser(Generic[TSource, TTarget]):
 
     def __init__(
         self,
-        source_type: Type[TSource],
-        target_type: Type[TTarget],
+        source_type: type[TSource],
+        target_type: type[TTarget],
     ) -> None:
         self._source_type = source_type
         self._target_type = target_type
 
     @property
-    def source_type(self) -> Type[TSource]:
+    def source_type(self) -> type[TSource]:
         """source type"""
         return self._source_type
 
     @property
-    def target_type(self) -> Type[TTarget]:
+    def target_type(self) -> type[TTarget]:
         """target type"""
         return self._target_type
 
@@ -64,14 +63,10 @@ class _NeverMatch(ValueParser[Any, Any]):
     def __init__(self) -> None:
         super().__init__(object, object)
 
-    def match(
-        self,
-        source_type: type[TSource],
-        target_type: type[TTarget],
-    ) -> TMatchRating:
+    def match(self, source_type: type, target_type: type) -> TMatchRating:
         return 0
 
-    def parse(self, value: TSource) -> TTarget:
+    def parse(self, value: object) -> object:
         raise TypeError()
 
 
@@ -79,14 +74,14 @@ class _NullError(Exception):
     ...
 
 
-def _init_and_setattr(cls: Type[T], attributes: dict[str, Any]) -> T:
+def _init_and_setattr(cls: type[T], attributes: dict[str, Any]) -> T:
     obj = cls()
     for key, value in attributes.items():
         setattr(obj, key, value)
     return obj
 
 
-def _init_kwargs(cls: Type[T], attributes: Any) -> T:
+def _init_kwargs(cls: type[T], attributes: Any) -> T:
     return cls(**attributes)
 
 
@@ -137,7 +132,10 @@ def _parse_required(
     if isinstance(value, (list, tuple)) and len(value) == 1:
         return _parse_value(value[0], t_key, value_parsers)
     value_parser = _get_best_value_parser(value_parsers, type(value), t_key)
-    return value_parser.parse(value)
+    parsed_value = value_parser.parse(value)
+    if not isinstance(parsed_value, t_key):
+        raise TypeError()
+    return parsed_value
 
 
 TValueParserData = tuple[ValueParser[Any, Any], TMatchRating]
@@ -238,10 +236,10 @@ def _get_attributes(
 
 def get_parser(
     *sub_parsers: ValueParser[Any, Any]
-) -> Callable[[Type[T]], TParseFunc[T]]:
+) -> Callable[[type[T]], TParseFunc[T]]:
     """get parser"""
 
-    def parse_lazy(target_type: Type[T]) -> TParseFunc[T]:
+    def parse_lazy(target_type: type[T]) -> TParseFunc[T]:
         def parse(data: dict[Any, Any]) -> T:
             attributes = _get_attributes(
                 target_type,

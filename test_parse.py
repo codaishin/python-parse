@@ -366,6 +366,7 @@ def _(_: TestGetParser) -> None:
         source_type=int,
         target_type=_Age,
         match=Mock(return_value=1),
+        parse=_Age,
     )
 
     to_person = get_parser(sub_parser)(_Person)
@@ -390,6 +391,7 @@ def _(test: TestGetParser) -> None:
             source_type=int,
             target_type=_Age,
             match=Mock(return_value=1),
+            parse=_Age,
         )
 
     sub_parsers = (get_sub_parser(), get_sub_parser(), get_sub_parser())
@@ -446,6 +448,31 @@ def _(test: TestGetParser) -> None:
 
         def parse(self, value: str) -> float:
             return float(value)
+
+    to_person = get_parser(_StrToFloat())(_Person)
+    with test.assertRaises(TypeError):
+        _ = to_person({"age": "5.1"})
+
+
+@TestGetParser.describe("evaluate parse result type")
+def _(test: TestGetParser) -> None:
+    @dataclass
+    class _Person:
+        age: float
+
+    class _StrToFloat(ValueParser[str, float]):
+        def __init__(self) -> None:
+            super().__init__(str, float)
+
+        def match(
+            self,
+            source_type: type[str],
+            target_type: type[float],
+        ) -> TMatchRating:
+            return 1
+
+        def parse(self, value: str) -> float:
+            return value  # type: ignore
 
     to_person = get_parser(_StrToFloat())(_Person)
     with test.assertRaises(TypeError):
