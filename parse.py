@@ -1,14 +1,11 @@
 """parse"""
 
-from abc import abstractmethod
 from dataclasses import is_dataclass
-from functools import partial, reduce
 from inspect import get_annotations
 from types import NoneType
 from typing import (
     Any,
     Callable,
-    Generic,
     Iterable,
     TypeVar,
     Union,
@@ -16,70 +13,29 @@ from typing import (
     get_origin,
 )
 
+
+# pylint: disable=too-few-public-methods
+class NoMatch:
+    """signifies, that value could not be matched"""
+
+
 T = TypeVar("T")
 TTarget = TypeVar("TTarget")
 TSource = TypeVar("TSource")
-TParseFunc = Callable[[Any], T | None]
-TMatchRating = int
-TParserData = tuple["IParser[Any]", TMatchRating]
+TParseFuncMatch = Callable[[Any, type[T]], T | NoMatch]
 
 TYPE_ERROR_MSG = "'{key}' in data not compatible with '{type}'"
 KEY_ERROR_MSG = "'{key}' not found in data"
 
 
-class IParser(Generic[TTarget]):
-    """parser interface"""
-
-    @abstractmethod
-    def match(
-        self,
-        source_type: type,
-        target_type: type,
-    ) -> TMatchRating:
-        """checks, weather this parser is applicable
-
-        Returns:
-            TMatchRating:
-                The higher the rating the better this parser matches
-                the the provided types. `0` means the parser should not be
-                used for parsing the provided types.
-        """
-
-    @abstractmethod
-    def parse(self, value: object | None) -> TTarget:
-        """parse the provided value to the target type"""
+def match_subtype(source_value: Any, target_type: type[Any]) -> Any | NoMatch:
+    """matches target type"""
+    if not isinstance(source_value, target_type):
+        return NoMatch()
+    return source_value
 
 
-class MatchSubtype(IParser[object]):
-    """
-    Applied to source values that are a subtype of the target
-    value.
-
-    If valid: has a match rating of 1
-    """
-
-    def match(self, source_type: type, target_type: type) -> TMatchRating:
-        return 1 if issubclass(source_type, target_type) else 0
-
-    def parse(self, value: object) -> object:
-        return value
-
-
-class MatchNone(IParser[None]):
-    """
-    Applied to source values that are None.
-
-    If valid: has a match rating of 1
-    """
-
-    def match(self, source_type: type, target_type: type) -> TMatchRating:
-        return 1 if issubclass(source_type, NoneType) else 0
-
-    def parse(self, value: object) -> None:
-        return None
-
-
-DEFAULT_VALUE_PARSERS = (MatchSubtype(), MatchNone())
+DEFAULT_VALUE_PARSERS = (match_subtype,)
 
 
 def _init_and_setattr(cls: type[T], attributes: dict[str, Any]) -> T:
@@ -114,40 +70,25 @@ def _is_iterable(t_key: Any, value: Any, *assert_types: Any) -> bool:
     return False
 
 
-def _best_parser_for(
-    source_type: type,
-    target_type: type,
-) -> Callable[[TParserData, IParser[Any]], TParserData,]:
-    def run(aggr: TParserData, crnt: IParser[Any]) -> TParserData:
-        crnt_match = crnt.match(source_type, target_type)
-        (_, aggr_match) = aggr
-        if crnt_match > aggr_match:
-            return (crnt, crnt_match)
-        return aggr
+def _apply_parsers(
+    value_parsers: tuple[TParseFuncMatch[Any], ...],
+    source_value: Any,
+    target_type: type[Any],
+) -> Any | NoMatch:
+    for parser in value_parsers:
+        result = parser(source_value, target_type)
+        if not isinstance(result, NoMatch):
+            return result
 
-    return run
-
-
-def _get_best_value_parser(
-    value_parsers: tuple[IParser[Any], ...],
-    source_type: type,
-    target_type: type,
-) -> tuple[TParseFunc[Any], TMatchRating]:
-    (fst, *remaining) = value_parsers
-    (parser, best_match) = reduce(
-        _best_parser_for(source_type, target_type),
-        remaining,
-        (fst, fst.match(source_type, target_type)),
-    )
-    return parser.parse, best_match
+    return NoMatch()
 
 
 def _parse_value(
     value: Any,
     t_key: Any,
-    value_parsers: tuple[IParser[Any], ...],
+    value_parsers: tuple[TParseFuncMatch[Any], ...],
 ) -> Any:
-    parse: TParseFunc[Any]
+    parse: Callable[[Any], Any]
     if _is_iterable(t_key, value, list):
         (t_key,) = get_args(t_key)
         parse = get_parser(*value_parsers)(t_key)
@@ -162,19 +103,17 @@ def _parse_value(
     if isinstance(value, (list, tuple)) and len(value) == 1:
         parse = get_parser(*value_parsers)(t_key)
         return parse(value[0])
-    if not value_parsers:
-        raise TypeError()
-    (parse, match) = _get_best_value_parser(value_parsers, type(value), t_key)
-    if not match:
-        raise TypeError()
-    return parse(value)
+    result = _apply_parsers(value_parsers, value, t_key)
+    if isinstance(result, NoMatch):
+        return None
+    return result
 
 
 def _parse_key(
     data: dict[Any, Any],
     key: str,
     t_key: type,
-    value_parsers: tuple[IParser[Any], ...],
+    value_parsers: tuple[TParseFuncMatch[Any], ...],
 ) -> Any:
     try:
         t_key, optional = _get_optional_or_orig(t_key)
@@ -188,7 +127,7 @@ def _parse_key(
 
 def _get_attributes(
     annotations: dict[str, type],
-    sub_parsers: tuple[IParser[Any], ...],
+    sub_parsers: tuple[TParseFuncMatch[Any], ...],
     data: dict[str, Any],
 ) -> dict[str, Any]:
     return {
@@ -199,7 +138,7 @@ def _get_attributes(
 
 def _parse_flat(
     target_type: type[T],
-    value_parsers: tuple[IParser[Any], ...],
+    value_parsers: tuple[TParseFuncMatch[Any], ...],
     data: Any,
     optional: bool,
 ) -> T | None:
@@ -223,7 +162,7 @@ def _get_optional_or_orig(_type: type) -> tuple[type, bool]:
 
 
 def _parse(
-    value_parsers: tuple[IParser[Any], ...],
+    value_parsers: tuple[TParseFuncMatch[Any], ...],
     target_type: type[T],
     data: Any,
 ) -> T | None:
@@ -243,20 +182,24 @@ def _parse(
 
 
 def get_parser(
-    *value_parsers: IParser[Any],
-) -> Callable[[type[T]], TParseFunc[T]]:
+    *value_parsers: TParseFuncMatch[Any],
+) -> Callable[[type[T]], Callable[[Any], T | None]]:
     """get parser func that uses the provided value parsers"""
 
-    def partial_parse(target_type: type[T]) -> TParseFunc[T]:
-        return partial(_parse, value_parsers, target_type)
+    def partial_parse(target_type: type[T]) -> Callable[[Any], T | None]:
+        def parse(value: Any) -> T | None:
+            return _parse(value_parsers, target_type, value)
+
+        return parse
 
     return partial_parse
 
 
 def get_parser_default(
-    *value_parsers: IParser[Any],
-) -> Callable[[type[T]], TParseFunc[T]]:
+    *value_parsers: TParseFuncMatch[Any],
+) -> Callable[[type[T]], Callable[[Any], T | None]]:
     """
-    get parser func which always uses at least `DEFAULT_VALUE_PARSERS`
+    get parser func which always attempts to use `DEFAULT_VALUE_PARSERS`
+    when provided value parsers did not match
     """
     return get_parser(*(value_parsers + DEFAULT_VALUE_PARSERS))

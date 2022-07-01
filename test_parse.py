@@ -3,15 +3,9 @@ from dataclasses import dataclass
 from datetime import date
 from test import UnitTests
 from typing import Any, Generic, Iterable, Optional, TypeVar
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
-from parse import (
-    KEY_ERROR_MSG,
-    TYPE_ERROR_MSG,
-    IParser,
-    TMatchRating,
-    get_parser_default,
-)
+from parse import KEY_ERROR_MSG, TYPE_ERROR_MSG, NoMatch, get_parser_default
 
 T = TypeVar("T")
 
@@ -281,18 +275,10 @@ def _(test: TestGetParserDefault) -> None:
     class _Person:
         age: _Age
 
-    class _AgeParser(IParser[_Age]):
-        def match(
-            self,
-            source_type: type,
-            target_type: type[_Age],
-        ) -> TMatchRating:
-            return 1
+    def parse_age(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
+        return _Age(source_value)
 
-        def parse(self, value: Any) -> _Age:
-            return _Age(value)
-
-    to_person = get_parser_default(_AgeParser())(_Person)
+    to_person = get_parser_default(parse_age)(_Person)
     person = to_person({"age": 5})
     test.assertEqual(_Person(age=_Age(5)), person)
 
@@ -310,18 +296,10 @@ def _(test: TestGetParserDefault) -> None:
     class _PersonList:
         persons: list[_Person]
 
-    class _AgeParser(IParser[_Age]):
-        def match(
-            self,
-            source_type: type,
-            target_type: type[_Age],
-        ) -> TMatchRating:
-            return 1
+    def parse_age(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
+        return _Age(source_value)
 
-        def parse(self, value: Any) -> _Age:
-            return _Age(value)
-
-    to_person = get_parser_default(_AgeParser())(_PersonList)
+    to_person = get_parser_default(parse_age)(_PersonList)
     person_list = to_person({"persons": [{"age": 5}]})
     test.assertEqual(
         _PersonList(persons=[_Person(age=_Age(5))]),
@@ -329,8 +307,11 @@ def _(test: TestGetParserDefault) -> None:
     )
 
 
-@TestGetParserDefault.describe("use best match")
+@TestGetParserDefault.describe("use first match")
 def _(test: TestGetParserDefault) -> None:
+    class _ShouldNotBeUsed(Exception):
+        ...
+
     class _Age(int):
         ...
 
@@ -338,23 +319,18 @@ def _(test: TestGetParserDefault) -> None:
     class _Person:
         age: _Age
 
-    class _AgeParser(IParser[_Age]):
-        def __init__(self, match: int) -> None:
-            self._match = match
+    def parse_age(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
+        return _Age(source_value)
 
-        def match(
-            self,
-            source_type: type,
-            target_type: type[_Age],
-        ) -> TMatchRating:
-            return self._match
+    def parse_age_raise(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
+        raise _ShouldNotBeUsed()
 
-        def parse(self, value: Any) -> _Age:
-            return _Age(value * self._match)
+    to_person = get_parser_default(parse_age, parse_age_raise)(_Person)
 
-    to_person = get_parser_default(_AgeParser(1), _AgeParser(2))(_Person)
-    person = to_person({"age": 5})
-    test.assertEqual(_Person(age=_Age(10)), person)
+    try:
+        _ = to_person({"age": 5})
+    except _ShouldNotBeUsed:
+        test.fail("invoked parser that should not have been invoked")
 
 
 @TestGetParserDefault.describe(
@@ -368,46 +344,67 @@ def _(_: TestGetParserDefault) -> None:
     class _Person:
         age: _Age
 
-    sub_parser = Mock(
-        source_type=int,
-        target_type=_Age,
-        match=Mock(return_value=1),
-        parse=_Age,
-    )
+    parse_age = Mock(return_value=_Age(5))
 
-    to_person = get_parser_default(sub_parser)(_Person)
+    to_person = get_parser_default(parse_age)(_Person)
     __ = to_person({"age": 5})
 
-    sub_parser.match.assert_called_once_with(int, _Age)
+    parse_age.assert_called_once_with(5, _Age)
 
 
 @TestGetParserDefault.describe(
-    "pass source and target type to multiple sub parsers' match()"
+    "pass source value and target type to multiple parsers when previous"
+    "parser did not suffice"
 )
-def _(test: TestGetParserDefault) -> None:
+def _(_: TestGetParserDefault) -> None:
     class _Age(int):
+        ...
+
+    class _Mail(str):
+        ...
+
+    class _Gender(str):
         ...
 
     @dataclass
     class _Person:
         age: _Age
+        mail: _Mail
+        gender: _Gender
 
-    def get_sub_parser() -> Mock:
-        return Mock(
-            source_type=int,
-            target_type=_Age,
-            match=Mock(return_value=1),
-            parse=_Age,
-        )
+    def from_to(src_type: type, ctr: type) -> Mock:
+        def parse(source_value: Any, target_type: type) -> Any | NoMatch:
+            if not isinstance(source_value, src_type):
+                return NoMatch()
+            if not issubclass(ctr, target_type):
+                return NoMatch()
+            return ctr(source_value)  # type: ignore
 
-    sub_parsers = (get_sub_parser(), get_sub_parser(), get_sub_parser())
+        return Mock(side_effect=parse)
 
-    to_person = get_parser_default(*sub_parsers)(_Person)
-    __ = to_person({"age": 5})
+    age = from_to(int, _Age)
+    mail = from_to(str, _Mail)
+    gender = from_to(str, _Gender)
 
-    for i, parser in enumerate(sub_parsers):
-        with test.subTest(f"test parsers {i}"):
-            parser.match.assert_called_once_with(int, _Age)
+    to_person = get_parser_default(age, mail, gender)(_Person)
+
+    __ = to_person(
+        {
+            "age": 24,
+            "mail": "my.mail@example.com",
+            "gender": "fluffy",
+        }
+    )
+
+    calls = (
+        call(24, _Age),
+        call("my.mail@example.com", _Mail),
+        call("fluffy", _Gender),
+    )
+
+    age.assert_has_calls(calls)
+    mail.assert_has_calls(calls[1:])
+    gender.assert_has_calls(calls[2:])
 
 
 @TestGetParserDefault.describe("evaluate parse result type")
@@ -416,18 +413,10 @@ def _(test: TestGetParserDefault) -> None:
     class _Person:
         age: float
 
-    class _StrToFloat(IParser[float]):
-        def match(
-            self,
-            source_type: type,
-            target_type: type[float],
-        ) -> TMatchRating:
-            return 1
+    def str_to_float(source_value: Any, _: type[float]) -> float | NoMatch:
+        return source_value  # type: ignore
 
-        def parse(self, value: Any) -> float:
-            return value  # type: ignore
-
-    to_person = get_parser_default(_StrToFloat())(_Person)
+    to_person = get_parser_default(str_to_float)(_Person)
     with test.assertRaises(TypeError):
         _ = to_person({"age": "5.1"})
 
@@ -449,14 +438,10 @@ def _(test: TestGetParserDefault) -> None:
     class _Age(int):
         ...
 
-    class _AgeParser(IParser[_Age]):
-        def match(self, source_type: type, target_type: type) -> TMatchRating:
-            return 2
+    def parse_age(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
+        return _Age(source_value)
 
-        def parse(self, value: Any) -> _Age:
-            return _Age(value)
-
-    to_tuple = get_parser_default(_AgeParser())(tuple[_Age, ...])
+    to_tuple = get_parser_default(parse_age)(tuple[_Age, ...])
     test.assertEqual(to_tuple((4, 6)), (_Age(4), _Age(6)))
 
 
