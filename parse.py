@@ -91,17 +91,17 @@ def _parse_value(
     parse: Callable[[Any], Any]
     if _is_iterable(t_key, value, list):
         (t_key,) = get_args(t_key)
-        parse = get_parser(*value_parsers)(t_key)
+        parse = get_parser_no_defaults(*value_parsers)(t_key)
         return [parse(e) for e in value]
     if _is_iterable(t_key, value, tuple, Iterable):
         (t_key, *_) = get_args(t_key)
-        parse = get_parser(*value_parsers)(t_key)
+        parse = get_parser_no_defaults(*value_parsers)(t_key)
         return tuple((parse(e) for e in value))
     if isinstance(value, dict):
-        parse = get_parser(*value_parsers)(t_key)
+        parse = get_parser_no_defaults(*value_parsers)(t_key)
         return parse(value)
     if isinstance(value, (list, tuple)) and len(value) == 1:
-        parse = get_parser(*value_parsers)(t_key)
+        parse = get_parser_no_defaults(*value_parsers)(t_key)
         return parse(value[0])
     result = _apply_parsers(value_parsers, value, t_key)
     if isinstance(result, NoMatch):
@@ -181,7 +181,7 @@ def _parse(
     return _init_and_setattr(target_type, attributes)
 
 
-def get_parser(
+def get_parser_no_defaults(
     *value_parsers: TParseFuncMatch[Any],
 ) -> Callable[[type[T]], Callable[[Any], T | None]]:
     """get parser func that uses the provided value parsers"""
@@ -195,11 +195,11 @@ def get_parser(
     return partial_parse
 
 
-def get_parser_default(
+def get_parser(
     *value_parsers: TParseFuncMatch[Any],
 ) -> Callable[[type[T]], Callable[[Any], T | None]]:
     """
     get parser func which always attempts to use `DEFAULT_VALUE_PARSERS`
     when provided value parsers did not match
     """
-    return get_parser(*(value_parsers + DEFAULT_VALUE_PARSERS))
+    return get_parser_no_defaults(*(value_parsers + DEFAULT_VALUE_PARSERS))

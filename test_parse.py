@@ -5,7 +5,7 @@ from test import UnitTests
 from typing import Any, Generic, Iterable, Optional, TypeVar
 from unittest.mock import Mock, call
 
-from parse import KEY_ERROR_MSG, TYPE_ERROR_MSG, NoMatch, get_parser_default
+from parse import KEY_ERROR_MSG, TYPE_ERROR_MSG, NoMatch, get_parser
 
 T = TypeVar("T")
 
@@ -21,7 +21,7 @@ def _(test: TestGetParserDefault) -> None:
         name: str
         age: int
 
-    to_person = get_parser_default()(_Person)
+    to_person = get_parser()(_Person)
     person = to_person({"name": "Harry", "age": 42})
     assert person
     test.assertEqual((person.name, person.age), ("Harry", 42))
@@ -34,7 +34,7 @@ def _(test: TestGetParserDefault) -> None:
         name: str
         age: int
 
-    to_person = get_parser_default()(_Person)
+    to_person = get_parser()(_Person)
     person = to_person({"name": ["Harry"], "age": [42]})
     assert person
     test.assertEqual((person.name, person.age), ("Harry", 42))
@@ -48,7 +48,7 @@ def _(test: TestGetParserDefault) -> None:
         age: Optional[int]
         birthday: Optional[date]
 
-    to_person = get_parser_default()(_Person)
+    to_person = get_parser()(_Person)
     person = to_person({"age": None, "birthday": date(2000, 1, 1)})
     assert person
     test.assertEqual(
@@ -63,7 +63,7 @@ def _(test: TestGetParserDefault) -> None:
     class _Person:
         names: list[Optional[str]]
 
-    to_person = get_parser_default()(_Person)
+    to_person = get_parser()(_Person)
     person = to_person({"names": ["Rudy", None]})
     assert person
     test.assertListEqual(person.names, ["Rudy", None])
@@ -76,7 +76,7 @@ def _(test: TestGetParserDefault) -> None:
         name: str
         age: int
 
-    to_person = get_parser_default()(_Person)
+    to_person = get_parser()(_Person)
     with test.assertRaises(KeyError) as ctx:
         _ = to_person({"age": 33})
 
@@ -92,7 +92,7 @@ def _(test: TestGetParserDefault) -> None:
         max_speed: int
         seats: int
 
-    to_car = get_parser_default()(_Car)
+    to_car = get_parser()(_Car)
     with test.assertRaises(TypeError) as ctx:
         _ = to_car({"max_speed": "foo", "seats": "bar"})
 
@@ -111,7 +111,7 @@ def _(test: TestGetParserDefault) -> None:
     class _Mock:
         field: _Generic[int]
 
-    to_mock = get_parser_default()(_Mock)
+    to_mock = get_parser()(_Mock)
     with test.assertRaises(TypeError) as ctx:
         _ = to_mock({"field": 32})
 
@@ -133,7 +133,7 @@ def _(test: TestGetParserDefault) -> None:
         name: str
         age: int
 
-    to_person = get_parser_default()(_Person)
+    to_person = get_parser()(_Person)
     person = to_person(
         {
             "name": "Jenny",
@@ -168,7 +168,7 @@ def _(test: TestGetParserDefault) -> None:
         snd_address: Optional[_Address]
         trd_address: Optional[_Address]
 
-    to_person = get_parser_default()(_Person)
+    to_person = get_parser()(_Person)
     person = to_person(
         {
             "fst_address": {"street": "Sesame Street"},
@@ -195,7 +195,7 @@ def _(test: TestGetParserDefault) -> None:
         name: str
         age: int
 
-    to_person = get_parser_default()(_Person)
+    to_person = get_parser()(_Person)
     person = to_person({"name": "Harry", "age": 42})
     assert person
     test.assertEqual((person.name, person.age), ("Harry", 42))
@@ -209,7 +209,7 @@ def _(test: TestGetParserDefault) -> None:
         age: int
         species = "Human"
 
-    to_person = get_parser_default()(_Person)
+    to_person = get_parser()(_Person)
     person = to_person({"name": "Harry", "age": 42, "species": "Martian"})
     assert person
     test.assertEqual(
@@ -224,7 +224,7 @@ def _(test: TestGetParserDefault) -> None:
     class _Path:
         nodes: list[str]
 
-    to_path = get_parser_default()(_Path)
+    to_path = get_parser()(_Path)
     path = to_path({"nodes": ["path", "to", "target"]})
     assert path
     test.assertIsInstance(path.nodes, list)
@@ -240,7 +240,7 @@ def _(test: TestGetParserDefault) -> None:
     class _Path:
         nodes: tuple[str]
 
-    to_path = get_parser_default()(_Path)
+    to_path = get_parser()(_Path)
     path = to_path({"nodes": ["path", "to", "target"]})
     assert path
     test.assertIsInstance(path.nodes, tuple)
@@ -256,7 +256,7 @@ def _(test: TestGetParserDefault) -> None:
     class _Path:
         nodes: Iterable[str]
 
-    to_path = get_parser_default()(_Path)
+    to_path = get_parser()(_Path)
     path = to_path({"nodes": ["path", "to", "target"]})
     assert path
     test.assertIsInstance(path.nodes, tuple)
@@ -278,7 +278,7 @@ def _(test: TestGetParserDefault) -> None:
     def parse_age(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
         return _Age(source_value)
 
-    to_person = get_parser_default(parse_age)(_Person)
+    to_person = get_parser(parse_age)(_Person)
     person = to_person({"age": 5})
     test.assertEqual(_Person(age=_Age(5)), person)
 
@@ -299,7 +299,7 @@ def _(test: TestGetParserDefault) -> None:
     def parse_age(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
         return _Age(source_value)
 
-    to_person = get_parser_default(parse_age)(_PersonList)
+    to_person = get_parser(parse_age)(_PersonList)
     person_list = to_person({"persons": [{"age": 5}]})
     test.assertEqual(
         _PersonList(persons=[_Person(age=_Age(5))]),
@@ -325,7 +325,7 @@ def _(test: TestGetParserDefault) -> None:
     def parse_age_raise(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
         raise _ShouldNotBeUsed()
 
-    to_person = get_parser_default(parse_age, parse_age_raise)(_Person)
+    to_person = get_parser(parse_age, parse_age_raise)(_Person)
 
     try:
         _ = to_person({"age": 5})
@@ -346,7 +346,7 @@ def _(_: TestGetParserDefault) -> None:
 
     parse_age = Mock(return_value=_Age(5))
 
-    to_person = get_parser_default(parse_age)(_Person)
+    to_person = get_parser(parse_age)(_Person)
     __ = to_person({"age": 5})
 
     parse_age.assert_called_once_with(5, _Age)
@@ -386,7 +386,7 @@ def _(_: TestGetParserDefault) -> None:
     mail = from_to(str, _Mail)
     gender = from_to(str, _Gender)
 
-    to_person = get_parser_default(age, mail, gender)(_Person)
+    to_person = get_parser(age, mail, gender)(_Person)
 
     __ = to_person(
         {
@@ -416,20 +416,20 @@ def _(test: TestGetParserDefault) -> None:
     def str_to_float(source_value: Any, _: type[float]) -> float | NoMatch:
         return source_value  # type: ignore
 
-    to_person = get_parser_default(str_to_float)(_Person)
+    to_person = get_parser(str_to_float)(_Person)
     with test.assertRaises(TypeError):
         _ = to_person({"age": "5.1"})
 
 
 @TestGetParserDefault.describe("parse str")
 def _(test: TestGetParserDefault) -> None:
-    to_string = get_parser_default()(str)
+    to_string = get_parser()(str)
     test.assertEqual(to_string("hello"), "hello")
 
 
 @TestGetParserDefault.describe("parse tuple[str]")
 def _(test: TestGetParserDefault) -> None:
-    to_tuple = get_parser_default()(tuple[str, ...])
+    to_tuple = get_parser()(tuple[str, ...])
     test.assertEqual(to_tuple(("hello", "world")), ("hello", "world"))
 
 
@@ -441,12 +441,12 @@ def _(test: TestGetParserDefault) -> None:
     def parse_age(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
         return _Age(source_value)
 
-    to_tuple = get_parser_default(parse_age)(tuple[_Age, ...])
+    to_tuple = get_parser(parse_age)(tuple[_Age, ...])
     test.assertEqual(to_tuple((4, 6)), (_Age(4), _Age(6)))
 
 
 @TestGetParserDefault.describe("parse tuple item type mismatch")
 def _(test: TestGetParserDefault) -> None:
-    to_tuple = get_parser_default()(tuple[str])
+    to_tuple = get_parser()(tuple[str])
     with test.assertRaises(TypeError):
         _ = to_tuple((1, 2, 3))
