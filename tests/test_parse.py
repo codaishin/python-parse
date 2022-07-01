@@ -1,13 +1,13 @@
 """test parse"""
 from dataclasses import dataclass
 from datetime import date
-from test import UnitTests
-from typing import Any, Generic, Iterable, Optional, TypeVar
+from typing import Any, Generic, Iterable, Optional
 from unittest.mock import Mock, call
 
-from parse import KEY_ERROR_MSG, TYPE_ERROR_MSG, NoMatch, get_parser
+from python_parse.parse import KEY_ERROR_MSG, TYPE_ERROR_MSG, get_parser
+from python_parse.types import NoMatch, T
 
-T = TypeVar("T")
+from tests.test import UnitTests
 
 
 class TestGetParserDefault(UnitTests):
