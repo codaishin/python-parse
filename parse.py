@@ -2,10 +2,11 @@
 
 from dataclasses import is_dataclass
 from inspect import get_annotations
-from types import NoneType
+from types import EllipsisType, NoneType
 from typing import (
     Any,
     Callable,
+    Generic,
     Iterable,
     TypeVar,
     Union,
@@ -13,29 +14,90 @@ from typing import (
     get_origin,
 )
 
+T = TypeVar("T")
+TParseFunc = Callable[[Any, type], T | "NoMatch" | "LazyMatch[T]"]
+TGetParse = Callable[[type[T]], Callable[[Any], T | None]]
 
 # pylint: disable=too-few-public-methods
 class NoMatch:
     """signifies, that value could not be matched"""
 
 
-T = TypeVar("T")
-TTarget = TypeVar("TTarget")
-TSource = TypeVar("TSource")
-TParseFuncMatch = Callable[[Any, type[T]], T | NoMatch]
+class LazyMatch(Generic[T]):
+    """signifies, that value needs further resolve"""
+
+    def __init__(
+        self,
+        resolve: Callable[[TGetParse[T]], T | None],
+    ) -> None:
+        self._resolve = resolve
+
+    def resolve_with(self, get_parse: TGetParse[T]) -> T | None:
+        """pass `get_parse` onto stored resolve func"""
+        return self._resolve(get_parse)
+
 
 TYPE_ERROR_MSG = "'{key}' in data not compatible with '{type}'"
 KEY_ERROR_MSG = "'{key}' not found in data"
 
 
-def match_subtype(source_value: Any, target_type: type[Any]) -> Any | NoMatch:
-    """matches target type"""
+def match_value(source_value: Any, target_type: type[T]) -> T | NoMatch:
+    """matches target type with source value type"""
     if not isinstance(source_value, target_type):
         return NoMatch()
     return source_value
 
 
-DEFAULT_VALUE_PARSERS = (match_subtype,)
+def match_dict(source_value: Any, target_type: type) -> NoMatch | LazyMatch[T]:
+    """match dict to a nested type"""
+    if not isinstance(source_value, dict):
+        return NoMatch()
+
+    def resolve(get_parse: TGetParse[T]) -> T | None:
+        parse = get_parse(target_type)
+        return parse(source_value)
+
+    return LazyMatch(resolve)
+
+
+def match_iter(source_value: Any, target_type: type) -> NoMatch | LazyMatch[T]:
+    """match iterables
+
+    matches:
+        - Iterable -> list
+        - Iterable -> tuple
+        - Iterable -> Iterable (stored as tuple)
+    """
+    if not isinstance(source_value, Iterable):
+        return NoMatch()
+
+    target_iterable = get_origin(target_type)
+
+    if not target_iterable:
+        return NoMatch()
+
+    if target_iterable is get_origin(Iterable[Any]):
+        target_iterable = tuple
+
+    if not issubclass(target_iterable, (list, tuple)):
+        return NoMatch()
+
+    (arg, *rest) = get_args(target_type)
+    if len(rest) == 1 and not isinstance(rest[0], EllipsisType):
+        return NoMatch()
+
+    def resolve(get_parse: TGetParse[T]) -> T | None:
+        parse = get_parse(arg)
+        return target_iterable((parse(e) for e in source_value))  # type: ignore
+
+    return LazyMatch(resolve)
+
+
+DEFAULT_VALUE_PARSERS: tuple[TParseFunc[Any], ...] = (
+    match_iter,
+    match_dict,
+    match_value,
+)
 
 
 def _init_and_setattr(cls: type[T], attributes: dict[str, Any]) -> T:
@@ -49,32 +111,11 @@ def _init_kwargs(cls: type[T], attributes: Any) -> T:
     return cls(**attributes)
 
 
-def _is_iterable_candidate(t_key: Any, value: Any) -> bool:
-    return (
-        t_key is not str
-        and not isinstance(value, str)
-        and isinstance(value, Iterable)
-    )
-
-
-def _origin(value: Any) -> Any:
-    return get_origin(value) or value
-
-
-def _is_iterable(t_key: Any, value: Any, *assert_types: Any) -> bool:
-    if not _is_iterable_candidate(t_key, value):
-        return False
-    for assert_type in assert_types:
-        if _origin(t_key) is _origin(assert_type):
-            return True
-    return False
-
-
-def _apply_parsers(
-    value_parsers: tuple[TParseFuncMatch[Any], ...],
+def _try_parsers(
+    value_parsers: tuple[TParseFunc[Any], ...],
     source_value: Any,
-    target_type: type[Any],
-) -> Any | NoMatch:
+    target_type: type[T],
+) -> T | NoMatch | LazyMatch[T]:
     for parser in value_parsers:
         result = parser(source_value, target_type)
         if not isinstance(result, NoMatch):
@@ -85,27 +126,15 @@ def _apply_parsers(
 
 def _parse_value(
     value: Any,
-    t_key: Any,
-    value_parsers: tuple[TParseFuncMatch[Any], ...],
-) -> Any:
-    parse: Callable[[Any], Any]
-    if _is_iterable(t_key, value, list):
-        (t_key,) = get_args(t_key)
-        parse = get_parser_no_defaults(*value_parsers)(t_key)
-        return [parse(e) for e in value]
-    if _is_iterable(t_key, value, tuple, Iterable):
-        (t_key, *_) = get_args(t_key)
-        parse = get_parser_no_defaults(*value_parsers)(t_key)
-        return tuple((parse(e) for e in value))
-    if isinstance(value, dict):
-        parse = get_parser_no_defaults(*value_parsers)(t_key)
-        return parse(value)
-    if isinstance(value, (list, tuple)) and len(value) == 1:
-        parse = get_parser_no_defaults(*value_parsers)(t_key)
-        return parse(value[0])
-    result = _apply_parsers(value_parsers, value, t_key)
+    t_key: type[T],
+    value_parsers: tuple[TParseFunc[Any], ...],
+) -> T | None:
+    result = _try_parsers(value_parsers, value, t_key)
     if isinstance(result, NoMatch):
         return None
+    if isinstance(result, LazyMatch):
+        parser = get_parser_with_no_defaults(*value_parsers)
+        return result.resolve_with(parser)
     return result
 
 
@@ -113,7 +142,7 @@ def _parse_key(
     data: dict[Any, Any],
     key: str,
     t_key: type,
-    value_parsers: tuple[TParseFuncMatch[Any], ...],
+    value_parsers: tuple[TParseFunc[Any], ...],
 ) -> Any:
     try:
         t_key, optional = _get_optional_or_orig(t_key)
@@ -127,18 +156,18 @@ def _parse_key(
 
 def _get_attributes(
     annotations: dict[str, type],
-    sub_parsers: tuple[TParseFuncMatch[Any], ...],
+    value_parsers: tuple[TParseFunc[Any], ...],
     data: dict[str, Any],
 ) -> dict[str, Any]:
     return {
-        key: _parse_key(data, key, t_key, sub_parsers)
+        key: _parse_key(data, key, t_key, value_parsers)
         for key, t_key in annotations.items()
     }
 
 
 def _parse_flat(
     target_type: type[T],
-    value_parsers: tuple[TParseFuncMatch[Any], ...],
+    value_parsers: tuple[TParseFunc[Any], ...],
     data: Any,
     optional: bool,
 ) -> T | None:
@@ -147,22 +176,24 @@ def _parse_flat(
     if optional and parsed is None:
         return None
 
-    target_origin: type[T] = _origin(target_type)
+    target_origin: type[T] = get_origin(target_type) or target_type
     if isinstance(parsed, target_origin):
         return parsed
 
     raise TypeError()
 
 
-def _get_optional_or_orig(_type: type) -> tuple[type, bool]:
-    if _origin(_type) is Union:
-        (_type,) = (t for t in get_args(_type) if t is not NoneType)
-        return _type, True
-    return _type, False
+def _get_optional_or_orig(target_type: type) -> tuple[type, bool]:
+    if get_origin(target_type) is Union:
+        (target_type,) = (
+            t for t in get_args(target_type) if t is not NoneType
+        )
+        return target_type, True
+    return target_type, False
 
 
 def _parse(
-    value_parsers: tuple[TParseFuncMatch[Any], ...],
+    value_parsers: tuple[TParseFunc[Any], ...],
     target_type: type[T],
     data: Any,
 ) -> T | None:
@@ -181,10 +212,16 @@ def _parse(
     return _init_and_setattr(target_type, attributes)
 
 
-def get_parser_no_defaults(
-    *value_parsers: TParseFuncMatch[Any],
+def get_parser_with_no_defaults(
+    *value_parsers: TParseFunc[Any],
 ) -> Callable[[type[T]], Callable[[Any], T | None]]:
-    """get parser func that uses the provided value parsers"""
+    """get parser func that uses the provided value parsers
+
+    Parsers will be used in order until parsing succeeds.
+
+    Raises:
+        TypeError: When no parser matched
+    """
 
     def partial_parse(target_type: type[T]) -> Callable[[Any], T | None]:
         def parse(value: Any) -> T | None:
@@ -196,10 +233,17 @@ def get_parser_no_defaults(
 
 
 def get_parser(
-    *value_parsers: TParseFuncMatch[Any],
+    *value_parsers: TParseFunc[Any],
 ) -> Callable[[type[T]], Callable[[Any], T | None]]:
     """
     get parser func which always attempts to use `DEFAULT_VALUE_PARSERS`
-    when provided value parsers did not match
+    after provided parsers did not match.
+
+    Parsers will be used in order until parsing succeeds.
+
+    Raises:
+        TypeError: When no parser matched
     """
-    return get_parser_no_defaults(*(value_parsers + DEFAULT_VALUE_PARSERS))
+    return get_parser_with_no_defaults(
+        *(value_parsers + DEFAULT_VALUE_PARSERS)
+    )

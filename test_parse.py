@@ -27,19 +27,6 @@ def _(test: TestGetParserDefault) -> None:
     test.assertEqual((person.name, person.age), ("Harry", 42))
 
 
-@TestGetParserDefault.describe("single value from a single item list")
-def _(test: TestGetParserDefault) -> None:
-    # pylint: disable=too-few-public-methods
-    class _Person:
-        name: str
-        age: int
-
-    to_person = get_parser()(_Person)
-    person = to_person({"name": ["Harry"], "age": [42]})
-    assert person
-    test.assertEqual((person.name, person.age), ("Harry", 42))
-
-
 @TestGetParserDefault.describe("parse single optional value")
 def _(test: TestGetParserDefault) -> None:
     # pylint: disable=too-few-public-methods
@@ -218,7 +205,7 @@ def _(test: TestGetParserDefault) -> None:
     )
 
 
-@TestGetParserDefault.describe("can parse list field")
+@TestGetParserDefault.describe("can parse list[str] field")
 def _(test: TestGetParserDefault) -> None:
     # pylint: disable=too-few-public-methods
     class _Path:
@@ -238,7 +225,7 @@ def _(test: TestGetParserDefault) -> None:
 def _(test: TestGetParserDefault) -> None:
     # pylint: disable=too-few-public-methods
     class _Path:
-        nodes: tuple[str]
+        nodes: tuple[str, ...]
 
     to_path = get_parser()(_Path)
     path = to_path({"nodes": ["path", "to", "target"]})
@@ -283,7 +270,7 @@ def _(test: TestGetParserDefault) -> None:
     test.assertEqual(_Person(age=_Age(5)), person)
 
 
-@TestGetParserDefault.describe("can add Age parser for nested parsing")
+@TestGetParserDefault.describe("can add Age parser for list parsing")
 def _(test: TestGetParserDefault) -> None:
     class _Age(int):
         ...
@@ -296,7 +283,11 @@ def _(test: TestGetParserDefault) -> None:
     class _PersonList:
         persons: list[_Person]
 
-    def parse_age(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
+    def parse_age(source_value: Any, target_type: type) -> _Age | NoMatch:
+        if not isinstance(source_value, int):
+            return NoMatch()
+        if not issubclass(target_type, _Age):
+            return NoMatch()
         return _Age(source_value)
 
     to_person = get_parser(parse_age)(_PersonList)
@@ -438,15 +429,20 @@ def _(test: TestGetParserDefault) -> None:
     class _Age(int):
         ...
 
-    def parse_age(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
+    def parse_age(source_value: Any, target_type: type) -> _Age | NoMatch:
+        if not isinstance(source_value, int):
+            return NoMatch()
+        if not issubclass(target_type, _Age):
+            return NoMatch()
         return _Age(source_value)
 
     to_tuple = get_parser(parse_age)(tuple[_Age, ...])
-    test.assertEqual(to_tuple((4, 6)), (_Age(4), _Age(6)))
+    result = to_tuple((4, 6))
+    test.assertEqual(result, (_Age(4), _Age(6)))
 
 
 @TestGetParserDefault.describe("parse tuple item type mismatch")
 def _(test: TestGetParserDefault) -> None:
-    to_tuple = get_parser()(tuple[str])
+    to_tuple = get_parser()(tuple[str, ...])
     with test.assertRaises(TypeError):
         _ = to_tuple((1, 2, 3))
