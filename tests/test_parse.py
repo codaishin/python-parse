@@ -23,7 +23,6 @@ def _(test: TestGetParser) -> None:
 
     to_person = get_parser()(_Person)
     person = to_person({"name": "Harry", "age": 42})
-    assert person
     test.assertEqual((person.name, person.age), ("Harry", 42))
 
 
@@ -37,7 +36,6 @@ def _(test: TestGetParser) -> None:
 
     to_person = get_parser()(_Person)
     person = to_person({"age": None, "birthday": date(2000, 1, 1)})
-    assert person
     test.assertEqual(
         (person.name, person.age, person.birthday),
         (None, None, date(2000, 1, 1)),
@@ -52,7 +50,6 @@ def _(test: TestGetParser) -> None:
 
     to_person = get_parser()(_Person)
     person = to_person({"names": ["Rudy", None]})
-    assert person
     test.assertListEqual(person.names, ["Rudy", None])
 
 
@@ -131,7 +128,6 @@ def _(test: TestGetParser) -> None:
             },
         }
     )
-    assert person
     test.assertEqual(
         (
             person.name,
@@ -163,7 +159,6 @@ def _(test: TestGetParser) -> None:
         }
     )
 
-    assert person
     assert person.fst_address
     test.assertEqual(
         (
@@ -184,7 +179,6 @@ def _(test: TestGetParser) -> None:
 
     to_person = get_parser()(_Person)
     person = to_person({"name": "Harry", "age": 42})
-    assert person
     test.assertEqual((person.name, person.age), ("Harry", 42))
 
 
@@ -198,7 +192,6 @@ def _(test: TestGetParser) -> None:
 
     to_person = get_parser()(_Person)
     person = to_person({"name": "Harry", "age": 42, "species": "Martian"})
-    assert person
     test.assertEqual(
         (person.name, person.age, person.species),
         ("Harry", 42, "Human"),
@@ -213,7 +206,6 @@ def _(test: TestGetParser) -> None:
 
     to_path = get_parser()(_Path)
     path = to_path({"nodes": ["path", "to", "target"]})
-    assert path
     test.assertIsInstance(path.nodes, list)
     test.assertListEqual(
         path.nodes,
@@ -229,7 +221,6 @@ def _(test: TestGetParser) -> None:
 
     to_path = get_parser()(_Path)
     path = to_path({"nodes": ["path", "to", "target"]})
-    assert path
     test.assertIsInstance(path.nodes, tuple)
     test.assertListEqual(
         list(path.nodes),
@@ -245,7 +236,6 @@ def _(test: TestGetParser) -> None:
 
     to_path = get_parser()(_Path)
     path = to_path({"nodes": ["path", "to", "target"]})
-    assert path
     test.assertIsInstance(path.nodes, tuple)
     test.assertListEqual(
         list(path.nodes),
@@ -476,13 +466,10 @@ def _(test: TestGetParser) -> None:
     to_person = get_parser()(_Person)
 
     person = to_person({"age": "44"})
-    assert person
     test.assertEqual(person.age, "44")
 
     person = to_person({"age": 44})
-    assert person
     test.assertEqual(person.age, 44)
 
     person = to_person({"age": 44.4})
-    assert person
     test.assertEqual(person.age, 44.4)

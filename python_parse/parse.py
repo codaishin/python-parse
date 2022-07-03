@@ -22,32 +22,66 @@ DEFAULT_MATCHERS: tuple[TMatchFunc[Any], ...] = (
 
 def get_parser(
     *matchers: TMatchFunc[Any],
-) -> Callable[[type[T]], Callable[[Any], T | None]]:
+) -> Callable[[type[T]], Callable[[Any], T]]:
     """
     Get parse factory that uses the provided matchers and then
     `DEFAULT_MATCHERS`.
     Matchers will be used in order until one matches.
 
     Raises:
-        TypeError: When no matcher matched
+        TypeError: When value could not be parsed
     """
     return get_parser_with_no_defaults(*(matchers + DEFAULT_MATCHERS))
 
 
 def get_parser_with_no_defaults(
     *matchers: TMatchFunc[Any],
-) -> Callable[[type[T]], Callable[[Any], T | None]]:
+) -> Callable[[type[T]], Callable[[Any], T]]:
     """
     Get parse factory that uses the provided matchers.
     Matchers will be used in order until one matches.
 
     Raises:
-        TypeError: When no matcher matched
+        TypeError: When value could not be parsed
     """
 
+    def partial_parse(target_type: type[T]) -> Callable[[Any], T]:
+        parse_optional = _get_parse_factory(matchers)(target_type)
+
+        def parse(value: Any) -> T:
+            result = parse_optional(value)
+            if result is None:
+                raise TypeError()
+            return result
+
+        return parse
+
+    return partial_parse
+
+
+def _get_parse_factory(
+    matchers: tuple[TMatchFunc[Any], ...]
+) -> Callable[[type[T]], Callable[[Any], T | None]]:
     def partial_parse(target_type: type[T]) -> Callable[[Any], T | None]:
         def parse(value: Any) -> T | None:
-            return _parse(matchers, target_type, value)
+            (optional, types) = _unpack_union(target_type)
+
+            if not isinstance(value, dict):
+                return _parse(types, matchers, value, optional)
+
+            target_origin = get_origin(target_type)
+            if target_origin and issubclass(target_origin, dict):
+                return _parse((target_type,), matchers, value, optional)
+
+            annotations = get_annotations(target_type)
+            attributes = _parse_attributes(annotations, matchers, value)
+
+            if optional and attributes is None:
+                return None
+
+            if is_dataclass(target_type):
+                return _init_kwargs(target_type, attributes)
+            return _init_and_setattr(target_type, attributes)
 
         return parse
 
@@ -55,52 +89,12 @@ def get_parser_with_no_defaults(
 
 
 def _parse(
-    matchers: tuple[TMatchFunc[Any], ...],
-    target_type: type[T],
-    data: Any,
-) -> T | None:
-    (optional, types) = _unpack_union(target_type)
-    if not isinstance(data, dict):
-        return _parse_flat(types, matchers, data, optional)
-
-    target_origin = get_origin(target_type) or target_type
-    if issubclass(target_origin, dict):
-        return _parse_flat((target_type,), matchers, data, optional)
-
-    annotations = get_annotations(target_type)
-    attributes = _get_attributes(annotations, matchers, data)
-
-    if optional and attributes is None:
-        return None
-
-    if is_dataclass(target_type):
-        return _init_kwargs(target_type, attributes)
-    return _init_and_setattr(target_type, attributes)
-
-
-def _parse_key(
-    data: dict[Any, Any],
-    key: str,
-    t_key: type,
-    matchers: tuple[TMatchFunc[Any], ...],
-) -> Any:
-    try:
-        optional, types = _unpack_union(t_key)
-        value = data.get(key) if optional else data[key]
-        return _parse_flat(types, matchers, value, optional)
-    except TypeError as err:
-        raise TypeError(TYPE_ERROR_MSG.format(key=key, type=t_key)) from err
-    except KeyError as err:
-        raise KeyError(KEY_ERROR_MSG.format(key=key)) from err
-
-
-def _parse_flat(
     target_types: tuple[type[T], ...],
     matchers: tuple[TMatchFunc[Any], ...],
-    data: Any,
+    value: Any,
     optional: bool,
 ) -> T | None:
-    parsed = _parse_value(data, target_types, matchers)
+    parsed = _parse_value(value, target_types, matchers)
 
     if optional and parsed is None:
         return None
@@ -114,6 +108,22 @@ def _parse_flat(
     raise TypeError()
 
 
+def _parse_key_value(
+    value: dict[Any, Any],
+    key: str,
+    t_key: type,
+    matchers: tuple[TMatchFunc[Any], ...],
+) -> Any:
+    try:
+        optional, types = _unpack_union(t_key)
+        value = value.get(key) if optional else value[key]
+        return _parse(types, matchers, value, optional)
+    except TypeError as err:
+        raise TypeError(TYPE_ERROR_MSG.format(key=key, type=t_key)) from err
+    except KeyError as err:
+        raise KeyError(KEY_ERROR_MSG.format(key=key)) from err
+
+
 def _parse_value(
     value: Any,
     target_types: tuple[type[T], ...],
@@ -122,7 +132,7 @@ def _parse_value(
     for target_type in target_types:
         resolve = _try_matchers(matchers, value, target_type)
         if isinstance(resolve, LazyMatch):
-            get_parse = get_parser_with_no_defaults(*matchers)
+            get_parse = _get_parse_factory(matchers)
             return resolve(get_parse)
         if not isinstance(resolve, NoMatch):
             return resolve
@@ -142,14 +152,14 @@ def _try_matchers(
     return NoMatch()
 
 
-def _get_attributes(
+def _parse_attributes(
     annotations: dict[str, type],
     value_parsers: tuple[TMatchFunc[Any], ...],
     data: dict[str, Any],
 ) -> dict[str, Any]:
     return {
-        key: _parse_key(data, key, t_key, value_parsers)
-        for key, t_key in annotations.items()
+        k: _parse_key_value(data, k, t, value_parsers)
+        for k, t in annotations.items()
     }
 
 
