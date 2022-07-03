@@ -12,7 +12,7 @@ class NoMatch:
 
 
 class LazyMatch(Generic[T]):
-    """signifies, that value needs further resolve"""
+    """function decorator signifying, that further resolve is needed"""
 
     def __init__(
         self,
@@ -20,6 +20,6 @@ class LazyMatch(Generic[T]):
     ) -> None:
         self._resolve = resolve
 
-    def resolve_with(self, get_parse: TGetParse[T]) -> T | None:
-        """pass `get_parse` onto stored resolve func"""
+    def __call__(self, get_parse: TGetParse[T]) -> T | None:
+        """resolve with provided parse factory"""
         return self._resolve(get_parse)

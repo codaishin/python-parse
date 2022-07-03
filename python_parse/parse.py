@@ -5,7 +5,7 @@ from inspect import get_annotations
 from types import NoneType
 from typing import Any, Callable, Union, get_args, get_origin
 
-from .matchers import match_nested, match_iterable, match_value
+from .matchers import match_iterable, match_nested, match_value
 from .types import LazyMatch, NoMatch, T, TMatchFunc
 
 TYPE_ERROR_MSG = "'{key}' in data not compatible with '{type}'"
@@ -112,13 +112,13 @@ def _parse_value(
     t_key: type[T],
     matchers: tuple[TMatchFunc[Any], ...],
 ) -> T | None:
-    result = _try_matchers(matchers, value, t_key)
-    if isinstance(result, NoMatch):
+    resolve = _try_matchers(matchers, value, t_key)
+    if isinstance(resolve, NoMatch):
         return None
-    if isinstance(result, LazyMatch):
+    if isinstance(resolve, LazyMatch):
         parser = get_parser_with_no_defaults(*matchers)
-        return result.resolve_with(parser)
-    return result
+        return resolve(parser)
+    return resolve
 
 
 def _try_matchers(

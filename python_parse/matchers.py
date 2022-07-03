@@ -18,11 +18,12 @@ def match_nested(source: Any, target_type: type) -> NoMatch | LazyMatch[T]:
     if not isinstance(source, dict):
         return NoMatch()
 
+    @LazyMatch
     def resolve(get_parse: TGetParse[T]) -> T | None:
         parse = get_parse(target_type)
         return parse(source)
 
-    return LazyMatch(resolve)
+    return resolve
 
 
 def match_iterable(source: Any, target_type: type) -> NoMatch | LazyMatch[T]:
@@ -51,8 +52,9 @@ def match_iterable(source: Any, target_type: type) -> NoMatch | LazyMatch[T]:
     if len(rest) == 1 and not isinstance(rest[0], EllipsisType):
         return NoMatch()
 
+    @LazyMatch
     def resolve(get_parse: TGetParse[T]) -> T | None:
         parse = get_parse(arg)
         return target_iterable((parse(e) for e in source))  # type: ignore
 
-    return LazyMatch(resolve)
+    return resolve
