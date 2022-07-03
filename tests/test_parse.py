@@ -11,7 +11,7 @@ from tests.test import UnitTests
 
 
 class TestGetParser(UnitTests):
-    """test get_parser_default"""
+    """test get_parser"""
 
 
 @TestGetParser.describe("parse model")
@@ -288,7 +288,7 @@ def _(test: TestGetParser) -> None:
     def match_age(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
         return _Age(source_value)
 
-    def match_age_raise(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
+    def match_age_raise(_: Any, __: type[_Age]) -> _Age | NoMatch:
         raise _ShouldNotBeUsed()
 
     parser = get_parser(additional_matchers=(match_age, match_age_raise))

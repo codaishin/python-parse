@@ -12,7 +12,8 @@ from .matchers import (
     match_tuple,
     match_value,
 )
-from .types import LazyMatch, NoMatch, T, TMatchFunc
+from .types import LazyMatch, NoMatch, T, TMatchFunc, TValidateFunc
+from .validators import validate_dict, validate_iterable
 
 TYPE_ERROR_MSG = "'{key}' in data not compatible with '{type}'"
 KEY_ERROR_MSG = "'{key}' not found in data"
@@ -26,38 +27,70 @@ DEFAULT_MATCHERS: tuple[TMatchFunc, ...] = (
     match_value,
 )
 
+DEFAULT_GENERIC_VALIDATORS: dict[type, TValidateFunc] = {
+    list: validate_iterable,
+    tuple: validate_iterable,
+    dict: validate_dict,
+}
+
 
 def get_parser(
     *,
     additional_matchers: tuple[TMatchFunc, ...] = (),
+    additional_generic_validators: dict[type, TValidateFunc] | None = None,
 ) -> Callable[[type[T]], Callable[[Any], T]]:
-    """
-    Get parse factory that uses the provided matchers and then
-    `DEFAULT_MATCHERS`.
-    Matchers will be used in order until one matches.
+    """Get parse factory.
+
+    Keyword Arguments:
+        additional_matchers: Matchers used to match source value against
+            target type. Matchers are used in the provided order.
+            If none matched, DEFAULT_MATCHERS will be used.
+        additional_generic_validators: Validates matched values when they are
+            generic types. Always uses `DEFAULT_GENERIC_VALIDATORS` unless
+            overridden (not recommended).
+
+    Returns:
+        (type[T]) -> (Any) -> T:
+            Parser to parse the desired type from source data
 
     Raises:
         TypeError: When value could not be parsed
+        KeyError: When an attribute could not be found in the value
     """
     return get_parser_with_no_defaults(
-        matchers=additional_matchers + DEFAULT_MATCHERS
+        matchers=additional_matchers + DEFAULT_MATCHERS,
+        generic_validators=DEFAULT_GENERIC_VALIDATORS
+        | (additional_generic_validators or {}),
     )
 
 
 def get_parser_with_no_defaults(
     *,
     matchers: tuple[TMatchFunc, ...] = (),
+    generic_validators: dict[type, TValidateFunc] | None = None,
 ) -> Callable[[type[T]], Callable[[Any], T]]:
-    """
-    Get parse factory that uses the provided matchers.
-    Matchers will be used in order until one matches.
+    """Get parse factory.
+
+    Keyword Arguments:
+        matchers: Matchers used to match source value against
+            target type. Matchers are used in the provided order.
+        generic_validators: Validates matched values when they are
+            generic types.
+
+    Returns:
+        (type[T]) -> (Any) -> T:
+            Parser to parse the desired type from source data
 
     Raises:
         TypeError: When value could not be parsed
+        KeyError: When an attribute could not be found in the value
     """
 
     def partial_parse(target_type: type[T]) -> Callable[[Any], T]:
-        parse_optional = _get_parse_factory(matchers)(target_type)
+        parse_optional = _get_parse_factory(
+            matchers,
+            generic_validators or {},
+        )(target_type)
 
         def parse(value: Any) -> T:
             result = parse_optional(value)
@@ -71,21 +104,39 @@ def get_parser_with_no_defaults(
 
 
 def _get_parse_factory(
-    matchers: tuple[TMatchFunc, ...]
+    matchers: tuple[TMatchFunc, ...],
+    generic_validators: dict[type, TValidateFunc],
 ) -> Callable[[type[T]], Callable[[Any], T | None]]:
     def partial_parse(target_type: type[T]) -> Callable[[Any], T | None]:
         def parse(value: Any) -> T | None:
             (optional, types) = _unpack_union(target_type)
 
             if not isinstance(value, dict):
-                return _parse(types, matchers, value, optional)
+                return _parse(
+                    types,
+                    matchers,
+                    generic_validators,
+                    value,
+                    optional,
+                )
 
             target_origin = get_origin(target_type)
             if target_origin and issubclass(target_origin, dict):
-                return _parse((target_type,), matchers, value, optional)
+                return _parse(
+                    (target_type,),
+                    matchers,
+                    generic_validators,
+                    value,
+                    optional,
+                )
 
             annotations = get_annotations(target_type)
-            attributes = _parse_attributes(annotations, matchers, value)
+            attributes = _parse_attributes(
+                annotations,
+                matchers,
+                generic_validators,
+                value,
+            )
 
             if optional and attributes is None:
                 return None
@@ -99,22 +150,32 @@ def _get_parse_factory(
     return partial_parse
 
 
+_invalid: TValidateFunc = lambda _, __: False
+
+
 def _parse(
     target_types: tuple[type, ...],
     matchers: tuple[TMatchFunc, ...],
+    generic_validators: dict[type, TValidateFunc],
     value: Any,
     optional: bool,
 ) -> Any | None:
-    parsed = _parse_value(value, target_types, matchers)
+    parsed = _parse_value(value, target_types, matchers, generic_validators)
 
     if optional and parsed is None:
         return None
 
-    target_origin: tuple[type, ...] = tuple(
-        (get_origin(t) or t for t in target_types)
-    )
-    if isinstance(parsed, target_origin):
-        return parsed
+    for target_type in target_types:
+        target_origin: type | None = get_origin(target_type)
+        if target_origin is None and isinstance(parsed, target_type):
+            return parsed
+        valid = (
+            generic_validators.get(target_origin, _invalid)
+            if target_origin
+            else _invalid
+        )
+        if valid(parsed, target_type):
+            return parsed
 
     raise TypeError()
 
@@ -124,11 +185,12 @@ def _parse_key_value(
     key: str,
     t_key: type,
     matchers: tuple[TMatchFunc, ...],
+    generic_validators: dict[type, TValidateFunc],
 ) -> Any:
     try:
         optional, types = _unpack_union(t_key)
         value = value.get(key) if optional else value[key]
-        return _parse(types, matchers, value, optional)
+        return _parse(types, matchers, generic_validators, value, optional)
     except TypeError as err:
         raise TypeError(TYPE_ERROR_MSG.format(key=key, type=t_key)) from err
     except KeyError as err:
@@ -139,11 +201,12 @@ def _parse_value(
     value: Any,
     target_types: tuple[type[T], ...],
     matchers: tuple[TMatchFunc, ...],
+    generic_validators: dict[type, TValidateFunc],
 ) -> T | None:
     for target_type in target_types:
         resolve = _try_matchers(matchers, value, target_type)
         if isinstance(resolve, LazyMatch):
-            get_parse = _get_parse_factory(matchers)
+            get_parse = _get_parse_factory(matchers, generic_validators)
             return resolve(get_parse)
         if not isinstance(resolve, NoMatch):
             return resolve
@@ -151,12 +214,12 @@ def _parse_value(
 
 
 def _try_matchers(
-    value_parsers: tuple[TMatchFunc, ...],
+    matchers: tuple[TMatchFunc, ...],
     source_value: Any,
     target_type: type,
 ) -> T | NoMatch | LazyMatch:
-    for parser in value_parsers:
-        result = parser(source_value, target_type)
+    for match in matchers:
+        result = match(source_value, target_type)
         if not isinstance(result, NoMatch):
             return result
 
@@ -165,11 +228,12 @@ def _try_matchers(
 
 def _parse_attributes(
     annotations: dict[str, type],
-    value_parsers: tuple[TMatchFunc, ...],
+    matchers: tuple[TMatchFunc, ...],
+    generic_validators: dict[type, TValidateFunc],
     data: dict[str, Any],
 ) -> dict[str, Any]:
     return {
-        k: _parse_key_value(data, k, t, value_parsers)
+        k: _parse_key_value(data, k, t, matchers, generic_validators)
         for k, t in annotations.items()
     }
 
