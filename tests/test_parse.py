@@ -31,9 +31,9 @@ def _(test: TestGetParser) -> None:
 def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Person:
-        name: Optional[str]
-        age: Optional[int]
-        birthday: Optional[date]
+        name: str | None
+        age: int | None
+        birthday: date | None
 
     to_person = get_parser()(_Person)
     person = to_person({"age": None, "birthday": date(2000, 1, 1)})
@@ -450,7 +450,6 @@ def _(test: TestGetParser) -> None:
 def _(test: TestGetParser) -> None:
     to_data = get_parser()(dict[str, int])
     data = to_data({"a": 24, "b": 42})
-    assert data
     test.assertEqual(data, {"a": 24, "b": 42})
 
 
@@ -466,3 +465,24 @@ def _(test: TestGetParser) -> None:
     to_data = get_parser()(dict[str, int])
     with test.assertRaises(TypeError):
         _ = to_data({"a": 24, 11: 42})
+
+
+@TestGetParser.describe("parse union")
+def _(test: TestGetParser) -> None:
+    @dataclass
+    class _Person:
+        age: str | int | float
+
+    to_person = get_parser()(_Person)
+
+    person = to_person({"age": "44"})
+    assert person
+    test.assertEqual(person.age, "44")
+
+    person = to_person({"age": 44})
+    assert person
+    test.assertEqual(person.age, 44)
+
+    person = to_person({"age": 44.4})
+    assert person
+    test.assertEqual(person.age, 44.4)
