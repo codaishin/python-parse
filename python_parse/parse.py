@@ -28,7 +28,8 @@ DEFAULT_MATCHERS: tuple[TMatchFunc, ...] = (
 
 
 def get_parser(
-    *matchers: TMatchFunc,
+    *,
+    additional_matchers: tuple[TMatchFunc, ...] = (),
 ) -> Callable[[type[T]], Callable[[Any], T]]:
     """
     Get parse factory that uses the provided matchers and then
@@ -38,11 +39,14 @@ def get_parser(
     Raises:
         TypeError: When value could not be parsed
     """
-    return get_parser_with_no_defaults(*(matchers + DEFAULT_MATCHERS))
+    return get_parser_with_no_defaults(
+        matchers=additional_matchers + DEFAULT_MATCHERS
+    )
 
 
 def get_parser_with_no_defaults(
-    *matchers: TMatchFunc,
+    *,
+    matchers: tuple[TMatchFunc, ...] = (),
 ) -> Callable[[type[T]], Callable[[Any], T]]:
     """
     Get parse factory that uses the provided matchers.
@@ -96,17 +100,17 @@ def _get_parse_factory(
 
 
 def _parse(
-    target_types: tuple[type[T], ...],
+    target_types: tuple[type, ...],
     matchers: tuple[TMatchFunc, ...],
     value: Any,
     optional: bool,
-) -> T | None:
+) -> Any | None:
     parsed = _parse_value(value, target_types, matchers)
 
     if optional and parsed is None:
         return None
 
-    target_origin: tuple[type[T], ...] = tuple(
+    target_origin: tuple[type, ...] = tuple(
         (get_origin(t) or t for t in target_types)
     )
     if isinstance(parsed, target_origin):
