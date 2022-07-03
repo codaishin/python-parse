@@ -26,6 +26,32 @@ def match_nested(source: Any, target_type: type) -> NoMatch | LazyMatch[T]:
     return resolve
 
 
+def match_dict(
+    source: Any,
+    target_type: type,
+) -> NoMatch | LazyMatch[dict[Any, Any]]:
+    """matches dictionary"""
+
+    if not isinstance(source, dict):
+        return NoMatch()
+
+    origin = get_origin(target_type)
+    if origin is None or not issubclass(origin, dict):
+        return NoMatch()
+
+    (t_key, t_value) = get_args(target_type)
+
+    @LazyMatch
+    def resolve(
+        get_parser: TGetParse[dict[Any, Any]]
+    ) -> dict[Any, Any] | None:
+        parse_key = get_parser(t_key)
+        parse_value = get_parser(t_value)
+        return {parse_key(k): parse_value(v) for k, v in source.items()}
+
+    return resolve
+
+
 def match_iterable(source: Any, target_type: type) -> NoMatch | LazyMatch[T]:
     """matches source value to Iterables
 

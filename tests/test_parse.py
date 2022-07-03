@@ -10,12 +10,12 @@ from python_parse.types import NoMatch, T
 from tests.test import UnitTests
 
 
-class TestGetParserDefault(UnitTests):
+class TestGetParser(UnitTests):
     """test get_parser_default"""
 
 
-@TestGetParserDefault.describe("parse model")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("parse model")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Person:
         name: str
@@ -27,8 +27,8 @@ def _(test: TestGetParserDefault) -> None:
     test.assertEqual((person.name, person.age), ("Harry", 42))
 
 
-@TestGetParserDefault.describe("parse single optional value")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("parse single optional value")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Person:
         name: Optional[str]
@@ -44,8 +44,8 @@ def _(test: TestGetParserDefault) -> None:
     )
 
 
-@TestGetParserDefault.describe("parse list with optional value")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("parse list with optional value")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Person:
         names: list[Optional[str]]
@@ -56,8 +56,8 @@ def _(test: TestGetParserDefault) -> None:
     test.assertListEqual(person.names, ["Rudy", None])
 
 
-@TestGetParserDefault.describe("missing key")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("missing key")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Person:
         name: str
@@ -72,8 +72,8 @@ def _(test: TestGetParserDefault) -> None:
     test.assertEqual(str(error), str(ctx.exception))
 
 
-@TestGetParserDefault.describe("type mismatch")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("type mismatch")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Car:
         max_speed: int
@@ -88,8 +88,8 @@ def _(test: TestGetParserDefault) -> None:
     test.assertEqual(str(error), str(ctx.exception))
 
 
-@TestGetParserDefault.describe("type mismatch for generic annotation")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("type mismatch for generic annotation")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Generic(Generic[T]):
         pass
@@ -107,8 +107,8 @@ def _(test: TestGetParserDefault) -> None:
     test.assertEqual(str(error), str(ctx.exception))
 
 
-@TestGetParserDefault.describe("parse nested")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("parse nested")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Address:
         street: str
@@ -143,8 +143,8 @@ def _(test: TestGetParserDefault) -> None:
     )
 
 
-@TestGetParserDefault.describe("optional nested")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("optional nested")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Address:
         street: str
@@ -175,8 +175,8 @@ def _(test: TestGetParserDefault) -> None:
     )
 
 
-@TestGetParserDefault.describe("parse dataclass")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("parse dataclass")
+def _(test: TestGetParser) -> None:
     @dataclass
     class _Person:
         name: str
@@ -188,8 +188,8 @@ def _(test: TestGetParserDefault) -> None:
     test.assertEqual((person.name, person.age), ("Harry", 42))
 
 
-@TestGetParserDefault.describe("only parse annotations")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("only parse annotations")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Person:
         name: str
@@ -205,8 +205,8 @@ def _(test: TestGetParserDefault) -> None:
     )
 
 
-@TestGetParserDefault.describe("can parse list[str] field")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("can parse list[str] field")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Path:
         nodes: list[str]
@@ -221,8 +221,8 @@ def _(test: TestGetParserDefault) -> None:
     )
 
 
-@TestGetParserDefault.describe("can parse tuple field")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("can parse tuple field")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Path:
         nodes: tuple[str, ...]
@@ -237,8 +237,8 @@ def _(test: TestGetParserDefault) -> None:
     )
 
 
-@TestGetParserDefault.describe("can parse Iterable field")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("can parse Iterable field")
+def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Path:
         nodes: Iterable[str]
@@ -253,8 +253,8 @@ def _(test: TestGetParserDefault) -> None:
     )
 
 
-@TestGetParserDefault.describe("can add Age parser")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("can add Age parser")
+def _(test: TestGetParser) -> None:
     class _Age(int):
         ...
 
@@ -270,8 +270,8 @@ def _(test: TestGetParserDefault) -> None:
     test.assertEqual(_Person(age=_Age(5)), person)
 
 
-@TestGetParserDefault.describe("can add Age parser for list parsing")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("can add Age parser for list parsing")
+def _(test: TestGetParser) -> None:
     class _Age(int):
         ...
 
@@ -298,8 +298,8 @@ def _(test: TestGetParserDefault) -> None:
     )
 
 
-@TestGetParserDefault.describe("use first match")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("use first match")
+def _(test: TestGetParser) -> None:
     class _ShouldNotBeUsed(Exception):
         ...
 
@@ -324,10 +324,8 @@ def _(test: TestGetParserDefault) -> None:
         test.fail("invoked parser that should not have been invoked")
 
 
-@TestGetParserDefault.describe(
-    "pass source and target type to sub parser's match()"
-)
-def _(_: TestGetParserDefault) -> None:
+@TestGetParser.describe("pass source and target type to sub parser's match()")
+def _(_: TestGetParser) -> None:
     class _Age(int):
         ...
 
@@ -343,11 +341,11 @@ def _(_: TestGetParserDefault) -> None:
     parse_age.assert_called_once_with(5, _Age)
 
 
-@TestGetParserDefault.describe(
+@TestGetParser.describe(
     "pass source value and target type to multiple parsers when previous"
     "parser did not suffice"
 )
-def _(_: TestGetParserDefault) -> None:
+def _(_: TestGetParser) -> None:
     class _Age(int):
         ...
 
@@ -398,8 +396,8 @@ def _(_: TestGetParserDefault) -> None:
     gender.assert_has_calls(calls[2:])
 
 
-@TestGetParserDefault.describe("evaluate parse result type")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("evaluate parse result type")
+def _(test: TestGetParser) -> None:
     @dataclass
     class _Person:
         age: float
@@ -412,20 +410,20 @@ def _(test: TestGetParserDefault) -> None:
         _ = to_person({"age": "5.1"})
 
 
-@TestGetParserDefault.describe("parse str")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("parse str")
+def _(test: TestGetParser) -> None:
     to_string = get_parser()(str)
     test.assertEqual(to_string("hello"), "hello")
 
 
-@TestGetParserDefault.describe("parse tuple[str]")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("parse tuple[str]")
+def _(test: TestGetParser) -> None:
     to_tuple = get_parser()(tuple[str, ...])
     test.assertEqual(to_tuple(("hello", "world")), ("hello", "world"))
 
 
-@TestGetParserDefault.describe("parse tuple[_Age]")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("parse tuple[_Age]")
+def _(test: TestGetParser) -> None:
     class _Age(int):
         ...
 
@@ -441,8 +439,30 @@ def _(test: TestGetParserDefault) -> None:
     test.assertEqual(result, (_Age(4), _Age(6)))
 
 
-@TestGetParserDefault.describe("parse tuple item type mismatch")
-def _(test: TestGetParserDefault) -> None:
+@TestGetParser.describe("parse tuple item type mismatch")
+def _(test: TestGetParser) -> None:
     to_tuple = get_parser()(tuple[str, ...])
     with test.assertRaises(TypeError):
         _ = to_tuple((1, 2, 3))
+
+
+@TestGetParser.describe("parse dict to dict")
+def _(test: TestGetParser) -> None:
+    to_data = get_parser()(dict[str, int])
+    data = to_data({"a": 24, "b": 42})
+    assert data
+    test.assertEqual(data, {"a": 24, "b": 42})
+
+
+@TestGetParser.describe("parse dict to dict type error for value")
+def _(test: TestGetParser) -> None:
+    to_data = get_parser()(dict[str, int])
+    with test.assertRaises(TypeError):
+        _ = to_data({"a": "24", "b": 42})
+
+
+@TestGetParser.describe("parse dict to dict type error for key")
+def _(test: TestGetParser) -> None:
+    to_data = get_parser()(dict[str, int])
+    with test.assertRaises(TypeError):
+        _ = to_data({"a": 24, 11: 42})

@@ -5,7 +5,7 @@ from inspect import get_annotations
 from types import NoneType
 from typing import Any, Callable, Union, get_args, get_origin
 
-from .matchers import match_iterable, match_nested, match_value
+from .matchers import match_dict, match_iterable, match_nested, match_value
 from .types import LazyMatch, NoMatch, T, TMatchFunc
 
 TYPE_ERROR_MSG = "'{key}' in data not compatible with '{type}'"
@@ -14,6 +14,7 @@ KEY_ERROR_MSG = "'{key}' not found in data"
 
 DEFAULT_MATCHERS: tuple[TMatchFunc[Any], ...] = (
     match_iterable,
+    match_dict,
     match_nested,
     match_value,
 )
@@ -58,8 +59,12 @@ def _parse(
     target_type: type[T],
     data: Any,
 ) -> T | None:
-    (target_type, optional) = _get_optional_or_orig(target_type)
+    (optional, target_type) = _unpack_union(target_type)
     if not isinstance(data, dict):
+        return _parse_flat(target_type, matchers, data, optional)
+
+    target_origin = get_origin(target_type) or target_type
+    if issubclass(target_origin, dict):
         return _parse_flat(target_type, matchers, data, optional)
 
     annotations = get_annotations(target_type)
@@ -80,7 +85,7 @@ def _parse_key(
     matchers: tuple[TMatchFunc[Any], ...],
 ) -> Any:
     try:
-        t_key, optional = _get_optional_or_orig(t_key)
+        optional, t_key = _unpack_union(t_key)
         value = data.get(key) if optional else data[key]
         return _parse_flat(t_key, matchers, value, optional)
     except TypeError as err:
@@ -116,8 +121,8 @@ def _parse_value(
     if isinstance(resolve, NoMatch):
         return None
     if isinstance(resolve, LazyMatch):
-        parser = get_parser_with_no_defaults(*matchers)
-        return resolve(parser)
+        get_parse = get_parser_with_no_defaults(*matchers)
+        return resolve(get_parse)
     return resolve
 
 
@@ -145,13 +150,13 @@ def _get_attributes(
     }
 
 
-def _get_optional_or_orig(target_type: type) -> tuple[type, bool]:
+def _unpack_union(target_type: type) -> tuple[bool, type]:
     if get_origin(target_type) is Union:
         (target_type,) = (
             t for t in get_args(target_type) if t is not NoneType
         )
-        return target_type, True
-    return target_type, False
+        return True, target_type
+    return False, target_type
 
 
 def _init_kwargs(cls: type[T], attributes: Any) -> T:
