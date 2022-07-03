@@ -1,7 +1,7 @@
 """test parse"""
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Generic, Iterable, Optional
+from typing import Any, Generic, Optional
 from unittest.mock import Mock, call
 
 from python_parse.parse import KEY_ERROR_MSG, TYPE_ERROR_MSG, get_parser
@@ -218,21 +218,6 @@ def _(test: TestGetParser) -> None:
     # pylint: disable=too-few-public-methods
     class _Path:
         nodes: tuple[str, ...]
-
-    to_path = get_parser()(_Path)
-    path = to_path({"nodes": ["path", "to", "target"]})
-    test.assertIsInstance(path.nodes, tuple)
-    test.assertListEqual(
-        list(path.nodes),
-        ["path", "to", "target"],
-    )
-
-
-@TestGetParser.describe("can parse Iterable field")
-def _(test: TestGetParser) -> None:
-    # pylint: disable=too-few-public-methods
-    class _Path:
-        nodes: Iterable[str]
 
     to_path = get_parser()(_Path)
     path = to_path({"nodes": ["path", "to", "target"]})
@@ -473,3 +458,15 @@ def _(test: TestGetParser) -> None:
 
     person = to_person({"age": 44.4})
     test.assertEqual(person.age, 44.4)
+
+
+@TestGetParser.describe("parse tuple with different types")
+def _(test: TestGetParser) -> None:
+    @dataclass
+    class _Person:
+        data: tuple[str, int, bool]
+
+    to_person = get_parser()(_Person)
+
+    person = to_person({"data": ["33", 33, True]})
+    test.assertEqual(person.data, ("33", 33, True))
