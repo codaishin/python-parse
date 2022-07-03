@@ -5,6 +5,7 @@ from typing import Any, Callable, TypeVar
 T = TypeVar("T")
 TGetParse = Callable[[type], Callable[[Any], Any | None]]
 TMatchFunc = Callable[[Any, type], Any | "NoMatch" | "LazyMatch"]
+TValidateFunc = Callable[[Any, type], bool]
 
 # pylint: disable=too-few-public-methods
 class NoMatch:

@@ -11,7 +11,7 @@ from tests.test import UnitTests
 
 
 class TestGetParser(UnitTests):
-    """test get_parser_default"""
+    """test get_parser"""
 
 
 @TestGetParser.describe("parse model")
@@ -237,10 +237,10 @@ def _(test: TestGetParser) -> None:
     class _Person:
         age: _Age
 
-    def parse_age(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
+    def match_age(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
         return _Age(source_value)
 
-    to_person = get_parser(parse_age)(_Person)
+    to_person = get_parser(additional_matchers=(match_age,))(_Person)
     person = to_person({"age": 5})
     test.assertEqual(_Person(age=_Age(5)), person)
 
@@ -258,14 +258,14 @@ def _(test: TestGetParser) -> None:
     class _PersonList:
         persons: list[_Person]
 
-    def parse_age(source_value: Any, target_type: type) -> _Age | NoMatch:
+    def match_age(source_value: Any, target_type: type) -> _Age | NoMatch:
         if not isinstance(source_value, int):
             return NoMatch()
         if not issubclass(target_type, _Age):
             return NoMatch()
         return _Age(source_value)
 
-    to_person = get_parser(parse_age)(_PersonList)
+    to_person = get_parser(additional_matchers=(match_age,))(_PersonList)
     person_list = to_person({"persons": [{"age": 5}]})
     test.assertEqual(
         _PersonList(persons=[_Person(age=_Age(5))]),
@@ -285,13 +285,14 @@ def _(test: TestGetParser) -> None:
     class _Person:
         age: _Age
 
-    def parse_age(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
+    def match_age(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
         return _Age(source_value)
 
-    def parse_age_raise(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
+    def match_age_raise(_: Any, __: type[_Age]) -> _Age | NoMatch:
         raise _ShouldNotBeUsed()
 
-    to_person = get_parser(parse_age, parse_age_raise)(_Person)
+    parser = get_parser(additional_matchers=(match_age, match_age_raise))
+    to_person = parser(_Person)
 
     try:
         _ = to_person({"age": 5})
@@ -308,12 +309,12 @@ def _(_: TestGetParser) -> None:
     class _Person:
         age: _Age
 
-    parse_age = Mock(return_value=_Age(5))
+    match_age = Mock(return_value=_Age(5))
 
-    to_person = get_parser(parse_age)(_Person)
+    to_person = get_parser(additional_matchers=(match_age,))(_Person)
     __ = to_person({"age": 5})
 
-    parse_age.assert_called_once_with(5, _Age)
+    match_age.assert_called_once_with(5, _Age)
 
 
 @TestGetParser.describe(
@@ -350,7 +351,7 @@ def _(_: TestGetParser) -> None:
     mail = from_to(str, _Mail)
     gender = from_to(str, _Gender)
 
-    to_person = get_parser(age, mail, gender)(_Person)
+    to_person = get_parser(additional_matchers=(age, mail, gender))(_Person)
 
     __ = to_person(
         {
@@ -380,7 +381,7 @@ def _(test: TestGetParser) -> None:
     def str_to_float(source_value: Any, _: type[float]) -> float | NoMatch:
         return source_value  # type: ignore
 
-    to_person = get_parser(str_to_float)(_Person)
+    to_person = get_parser(additional_matchers=(str_to_float,))(_Person)
     with test.assertRaises(TypeError):
         _ = to_person({"age": "5.1"})
 
@@ -402,14 +403,14 @@ def _(test: TestGetParser) -> None:
     class _Age(int):
         ...
 
-    def parse_age(source_value: Any, target_type: type) -> _Age | NoMatch:
+    def match_age(source_value: Any, target_type: type) -> _Age | NoMatch:
         if not isinstance(source_value, int):
             return NoMatch()
         if not issubclass(target_type, _Age):
             return NoMatch()
         return _Age(source_value)
 
-    to_tuple = get_parser(parse_age)(tuple[_Age, ...])
+    to_tuple = get_parser(additional_matchers=(match_age,))(tuple[_Age, ...])
     result = to_tuple((4, 6))
     test.assertEqual(result, (_Age(4), _Age(6)))
 
