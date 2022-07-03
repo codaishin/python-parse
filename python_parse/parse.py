@@ -5,15 +5,22 @@ from inspect import get_annotations
 from types import NoneType, UnionType
 from typing import Any, Callable, Union, get_args, get_origin
 
-from .matchers import match_dict, match_iterable, match_nested, match_value
+from .matchers import (
+    match_dict,
+    match_list,
+    match_nested,
+    match_tuple,
+    match_value,
+)
 from .types import LazyMatch, NoMatch, T, TMatchFunc
 
 TYPE_ERROR_MSG = "'{key}' in data not compatible with '{type}'"
 KEY_ERROR_MSG = "'{key}' not found in data"
 
 
-DEFAULT_MATCHERS: tuple[TMatchFunc[Any], ...] = (
-    match_iterable,
+DEFAULT_MATCHERS: tuple[TMatchFunc, ...] = (
+    match_tuple,
+    match_list,
     match_dict,
     match_nested,
     match_value,
@@ -21,7 +28,7 @@ DEFAULT_MATCHERS: tuple[TMatchFunc[Any], ...] = (
 
 
 def get_parser(
-    *matchers: TMatchFunc[Any],
+    *matchers: TMatchFunc,
 ) -> Callable[[type[T]], Callable[[Any], T]]:
     """
     Get parse factory that uses the provided matchers and then
@@ -35,7 +42,7 @@ def get_parser(
 
 
 def get_parser_with_no_defaults(
-    *matchers: TMatchFunc[Any],
+    *matchers: TMatchFunc,
 ) -> Callable[[type[T]], Callable[[Any], T]]:
     """
     Get parse factory that uses the provided matchers.
@@ -60,7 +67,7 @@ def get_parser_with_no_defaults(
 
 
 def _get_parse_factory(
-    matchers: tuple[TMatchFunc[Any], ...]
+    matchers: tuple[TMatchFunc, ...]
 ) -> Callable[[type[T]], Callable[[Any], T | None]]:
     def partial_parse(target_type: type[T]) -> Callable[[Any], T | None]:
         def parse(value: Any) -> T | None:
@@ -90,7 +97,7 @@ def _get_parse_factory(
 
 def _parse(
     target_types: tuple[type[T], ...],
-    matchers: tuple[TMatchFunc[Any], ...],
+    matchers: tuple[TMatchFunc, ...],
     value: Any,
     optional: bool,
 ) -> T | None:
@@ -112,7 +119,7 @@ def _parse_key_value(
     value: dict[Any, Any],
     key: str,
     t_key: type,
-    matchers: tuple[TMatchFunc[Any], ...],
+    matchers: tuple[TMatchFunc, ...],
 ) -> Any:
     try:
         optional, types = _unpack_union(t_key)
@@ -127,7 +134,7 @@ def _parse_key_value(
 def _parse_value(
     value: Any,
     target_types: tuple[type[T], ...],
-    matchers: tuple[TMatchFunc[Any], ...],
+    matchers: tuple[TMatchFunc, ...],
 ) -> T | None:
     for target_type in target_types:
         resolve = _try_matchers(matchers, value, target_type)
@@ -140,10 +147,10 @@ def _parse_value(
 
 
 def _try_matchers(
-    value_parsers: tuple[TMatchFunc[Any], ...],
+    value_parsers: tuple[TMatchFunc, ...],
     source_value: Any,
-    target_type: type[T],
-) -> T | NoMatch | LazyMatch[T]:
+    target_type: type,
+) -> T | NoMatch | LazyMatch:
     for parser in value_parsers:
         result = parser(source_value, target_type)
         if not isinstance(result, NoMatch):
@@ -154,7 +161,7 @@ def _try_matchers(
 
 def _parse_attributes(
     annotations: dict[str, type],
-    value_parsers: tuple[TMatchFunc[Any], ...],
+    value_parsers: tuple[TMatchFunc, ...],
     data: dict[str, Any],
 ) -> dict[str, Any]:
     return {

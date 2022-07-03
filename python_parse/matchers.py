@@ -13,23 +13,20 @@ def match_value(source: Any, target_type: type[T]) -> T | NoMatch:
     return source
 
 
-def match_nested(source: Any, target_type: type) -> NoMatch | LazyMatch[T]:
+def match_nested(source: Any, target_type: type) -> NoMatch | LazyMatch:
     """matches source value dictionary to target type"""
     if not isinstance(source, dict):
         return NoMatch()
 
     @LazyMatch
-    def resolve(get_parse: TGetParse[T]) -> T | None:
+    def resolve(get_parse: TGetParse) -> Any | None:
         parse = get_parse(target_type)
         return parse(source)
 
     return resolve
 
 
-def match_dict(
-    source: Any,
-    target_type: type,
-) -> NoMatch | LazyMatch[dict[Any, Any]]:
+def match_dict(source: Any, target_type: type) -> NoMatch | LazyMatch:
     """matches dictionary"""
 
     if not isinstance(source, dict):
@@ -42,9 +39,7 @@ def match_dict(
     (t_key, t_value) = get_args(target_type)
 
     @LazyMatch
-    def resolve(
-        get_parser: TGetParse[dict[Any, Any]]
-    ) -> dict[Any, Any] | None:
+    def resolve(get_parser: TGetParse) -> Any | None:
         parse_key = get_parser(t_key)
         parse_value = get_parser(t_value)
         return {parse_key(k): parse_value(v) for k, v in source.items()}
@@ -52,35 +47,44 @@ def match_dict(
     return resolve
 
 
-def match_iterable(source: Any, target_type: type) -> NoMatch | LazyMatch[T]:
-    """matches source value to Iterables
-
-    matches:
-        - Iterable -> list
-        - Iterable -> tuple
-        - Iterable -> Iterable (stored as tuple)
-    """
+def match_list(source: Any, target_type: type) -> NoMatch | LazyMatch:
+    """matches source iterable to list"""
     if not isinstance(source, Iterable):
         return NoMatch()
 
-    target_iterable = get_origin(target_type)
-
-    if not target_iterable:
+    origin_type = get_origin(target_type)
+    if origin_type is None or not issubclass(origin_type, list):
         return NoMatch()
 
-    if target_iterable is get_origin(Iterable[T]):
-        target_iterable = tuple
+    (arg,) = get_args(target_type)
 
-    if not issubclass(target_iterable, (list, tuple)):
+    @LazyMatch
+    def resolve(get_parse: TGetParse) -> Any | None:
+        parse = get_parse(arg)
+        return list((parse(e) for e in source))
+
+    return resolve
+
+
+def match_tuple(source: Any, target_type: type) -> NoMatch | LazyMatch:
+    """match source Iterable to tuple"""
+
+    if not isinstance(source, Iterable):
         return NoMatch()
 
-    (arg, *rest) = get_args(target_type)
-    if len(rest) == 1 and not isinstance(rest[0], EllipsisType):
+    origin_type = get_origin(target_type)
+    if origin_type is None or not issubclass(origin_type, tuple):
+        return NoMatch()
+
+    args: tuple[type, ...] = get_args(target_type)
+    len_source = len(tuple(source))
+    if len(args) == 2 and isinstance(args[1], EllipsisType):
+        args = (args[0],) * len_source
+    if len(args) != len_source:
         return NoMatch()
 
     @LazyMatch
-    def resolve(get_parse: TGetParse[T]) -> T | None:
-        parse = get_parse(arg)
-        return target_iterable((parse(e) for e in source))  # type: ignore
+    def resolve(get_parse: TGetParse) -> Any:
+        return tuple((get_parse(a)(v) for v, a in zip(source, args)))
 
     return resolve
