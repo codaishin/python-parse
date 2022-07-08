@@ -5,7 +5,7 @@ from inspect import get_annotations
 from types import EllipsisType, NoneType, UnionType
 from typing import Any, Callable, Union, get_args, get_origin
 
-from .generics_unpack import unpack_dict, unpack_list, unpack_tuple
+from .generics_unpack import unpack_dict, unpack_to_list, unpack_to_tuple
 from .matchers import (
     match_dict,
     match_list,
@@ -28,8 +28,8 @@ DEFAULT_MATCHERS: tuple[TMatchFunc, ...] = (
 )
 
 CORE_GENERIC_UNPACKERS: dict[type, TUnpackGenericFunc] = {
-    list: unpack_list,
-    tuple: unpack_tuple,
+    list: unpack_to_list,
+    tuple: unpack_to_tuple,
     dict: unpack_dict,
 }
 
