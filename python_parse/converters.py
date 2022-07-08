@@ -1,33 +1,39 @@
-"""matchers"""
+"""converters"""
 
 from types import EllipsisType
 from typing import Any, Iterable, get_args, get_origin
 
-from .types import LazyMatch, NoMatch, T, TGetParse
+from .types import NoMatch, ResolveWithParser, T, TParser
 
 
-def match_value(source: Any, target_type: type[T]) -> T | NoMatch:
-    """matches source value, when it is an instance of target type"""
+def convert_value(source: Any, target_type: type[T]) -> T | NoMatch:
+    """return source value, when it is an instance of target type"""
     if not isinstance(source, target_type):
         return NoMatch()
     return source
 
 
-def match_nested(source: Any, target_type: type) -> NoMatch | LazyMatch:
-    """matches source value dictionary to target type"""
+def convert_nested(
+    source: Any,
+    target_type: type,
+) -> NoMatch | ResolveWithParser:
+    """convert source value dictionary to target type"""
     if not isinstance(source, dict):
         return NoMatch()
 
-    @LazyMatch
-    def resolve(get_parse: TGetParse) -> Any | None:
-        parse = get_parse(target_type)
+    @ResolveWithParser
+    def resolve(parser: TParser) -> Any | None:
+        parse = parser(target_type)
         return parse(source)
 
     return resolve
 
 
-def match_dict(source: Any, target_type: type) -> NoMatch | LazyMatch:
-    """matches dictionary"""
+def convert_dict(
+    source: Any,
+    target_type: type,
+) -> NoMatch | ResolveWithParser:
+    """convert dictionary"""
 
     if not isinstance(source, dict):
         return NoMatch()
@@ -38,17 +44,20 @@ def match_dict(source: Any, target_type: type) -> NoMatch | LazyMatch:
 
     (t_key, t_value) = get_args(target_type)
 
-    @LazyMatch
-    def resolve(get_parser: TGetParse) -> Any | None:
-        parse_key = get_parser(t_key)
-        parse_value = get_parser(t_value)
+    @ResolveWithParser
+    def resolve(parser: TParser) -> Any | None:
+        parse_key = parser(t_key)
+        parse_value = parser(t_value)
         return {parse_key(k): parse_value(v) for k, v in source.items()}
 
     return resolve
 
 
-def match_list(source: Any, target_type: type) -> NoMatch | LazyMatch:
-    """matches source iterable to list"""
+def convert_list(
+    source: Any,
+    target_type: type,
+) -> NoMatch | ResolveWithParser:
+    """convert source iterable to list"""
     if not isinstance(source, Iterable):
         return NoMatch()
 
@@ -58,16 +67,19 @@ def match_list(source: Any, target_type: type) -> NoMatch | LazyMatch:
 
     (arg,) = get_args(target_type)
 
-    @LazyMatch
-    def resolve(get_parse: TGetParse) -> Any | None:
-        parse = get_parse(arg)
+    @ResolveWithParser
+    def resolve(parser: TParser) -> Any | None:
+        parse = parser(arg)
         return list((parse(e) for e in source))
 
     return resolve
 
 
-def match_tuple(source: Any, target_type: type) -> NoMatch | LazyMatch:
-    """match source Iterable to tuple"""
+def convert_tuple(
+    source: Any,
+    target_type: type,
+) -> NoMatch | ResolveWithParser:
+    """convert source Iterable to tuple"""
 
     if not isinstance(source, Iterable):
         return NoMatch()
@@ -83,8 +95,8 @@ def match_tuple(source: Any, target_type: type) -> NoMatch | LazyMatch:
     if len(args) != len_source:
         return NoMatch()
 
-    @LazyMatch
-    def resolve(get_parse: TGetParse) -> Any:
-        return tuple((get_parse(a)(v) for v, a in zip(source, args)))
+    @ResolveWithParser
+    def resolve(parser: TParser) -> Any:
+        return tuple((parser(a)(v) for v, a in zip(source, args)))
 
     return resolve

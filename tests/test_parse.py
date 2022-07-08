@@ -5,7 +5,7 @@ from typing import Any, Generic, Optional
 from unittest.mock import Mock, call
 
 from python_parse.parse import (
-    DEFAULT_MATCHERS,
+    DEFAULT_CONVERTERS,
     KEY_ERROR_MSG,
     TYPE_ERROR_MSG,
     get_parser,
@@ -246,7 +246,7 @@ def _(test: TestGetParser) -> None:
     def match_age(source_value: Any, _: type[_Age]) -> _Age | NoMatch:
         return _Age(source_value)
 
-    to_person = get_parser(matchers=(match_age,))(_Person)
+    to_person = get_parser(converters=(match_age,))(_Person)
     person = to_person({"age": 5})
     test.assertEqual(_Person(age=_Age(5)), person)
 
@@ -271,7 +271,7 @@ def _(test: TestGetParser) -> None:
             return NoMatch()
         return _Age(source_value)
 
-    to_person = get_parser(matchers=(match_age,))(_PersonList)
+    to_person = get_parser(converters=(match_age,))(_PersonList)
     person_list = to_person({"persons": [{"age": 5}]})
     test.assertEqual(
         _PersonList(persons=[_Person(age=_Age(5))]),
@@ -297,7 +297,7 @@ def _(test: TestGetParser) -> None:
     def match_age_raise(_: Any, __: type[_Age]) -> _Age | NoMatch:
         raise _ShouldNotBeUsed()
 
-    parser = get_parser(matchers=(match_age, match_age_raise))
+    parser = get_parser(converters=(match_age, match_age_raise))
     to_person = parser(_Person)
 
     try:
@@ -317,7 +317,7 @@ def _(_: TestGetParser) -> None:
 
     match_age = Mock(return_value=_Age(5))
 
-    to_person = get_parser(matchers=(match_age,))(_Person)
+    to_person = get_parser(converters=(match_age,))(_Person)
     __ = to_person({"age": 5})
 
     match_age.assert_called_once_with(5, _Age)
@@ -357,7 +357,7 @@ def _(_: TestGetParser) -> None:
     mail = from_to(str, _Mail)
     gender = from_to(str, _Gender)
 
-    to_person = get_parser(matchers=(age, mail, gender))(_Person)
+    to_person = get_parser(converters=(age, mail, gender))(_Person)
 
     __ = to_person(
         {
@@ -387,7 +387,7 @@ def _(test: TestGetParser) -> None:
     def str_to_float(source_value: Any, _: type[float]) -> float | NoMatch:
         return source_value  # type: ignore
 
-    to_person = get_parser(matchers=(str_to_float,))(_Person)
+    to_person = get_parser(converters=(str_to_float,))(_Person)
     with test.assertRaises(TypeError):
         _ = to_person({"age": "5.1"})
 
@@ -416,7 +416,7 @@ def _(test: TestGetParser) -> None:
             return NoMatch()
         return _Age(source_value)
 
-    to_tuple = get_parser(matchers=(match_age,))(tuple[_Age, ...])
+    to_tuple = get_parser(converters=(match_age,))(tuple[_Age, ...])
     result = to_tuple((4, 6))
     test.assertEqual(result, (_Age(4), _Age(6)))
 
@@ -491,7 +491,9 @@ def _(test: TestGetParserWithNoDefault) -> None:
         data_l: list[int]
         data_d: dict[bool, str]
 
-    to_person = get_parser_with_no_defaults(matchers=DEFAULT_MATCHERS)(_Person)
+    to_person = get_parser_with_no_defaults(converters=DEFAULT_CONVERTERS)(
+        _Person
+    )
 
     person = to_person(
         {
@@ -503,17 +505,3 @@ def _(test: TestGetParserWithNoDefault) -> None:
     test.assertEqual(person.data_t, ("33", 33, True))
     test.assertEqual(person.data_l, [1, 2, 3])
     test.assertEqual(person.data_d, {True: "true", False: "false"})
-
-
-@TestGetParserWithNoDefault.describe("overriding core generic validators")
-def _(test: TestGetParserWithNoDefault) -> None:
-    @dataclass
-    class _Person:
-        data_t: tuple[str, int, bool]
-        data_l: list[int]
-        data_d: dict[bool, str]
-
-    for g_type in (tuple, list, dict):
-        with test.subTest(f"overriding {g_type} raises"):
-            with test.assertRaises(LookupError):
-                _ = get_parser_with_no_defaults(unpackers={g_type: Mock()})
