@@ -27,7 +27,7 @@ DEFAULT_MATCHERS: tuple[TMatchFunc, ...] = (
     match_value,
 )
 
-DEFAULT_GENERIC_VALIDATORS: dict[type, TValidateFunc] = {
+CORE_GENERIC_VALIDATORS: dict[type, TValidateFunc] = {
     list: validate_iterable,
     tuple: validate_iterable,
     dict: validate_dict,
@@ -37,7 +37,7 @@ DEFAULT_GENERIC_VALIDATORS: dict[type, TValidateFunc] = {
 def get_parser(
     *,
     additional_matchers: tuple[TMatchFunc, ...] = (),
-    additional_generic_validators: dict[type, TValidateFunc] | None = None,
+    generic_validators: dict[type, TValidateFunc] | None = None,
 ) -> Callable[[type[T]], Callable[[Any], T]]:
     """Get parse factory.
 
@@ -46,8 +46,7 @@ def get_parser(
             target type. Matchers are used in the provided order.
             If none matched, DEFAULT_MATCHERS will be used.
         additional_generic_validators: Validates matched values when they are
-            generic types. Always uses `DEFAULT_GENERIC_VALIDATORS` unless
-            overridden (not recommended).
+            generic types.
 
     Returns:
         (type[T]) -> (Any) -> T:
@@ -56,11 +55,11 @@ def get_parser(
     Raises:
         TypeError: When value could not be parsed
         KeyError: When an attribute could not be found in the value
+        LookupError: When a core validator is overridden
     """
     return get_parser_with_no_defaults(
         matchers=additional_matchers + DEFAULT_MATCHERS,
-        generic_validators=DEFAULT_GENERIC_VALIDATORS
-        | (additional_generic_validators or {}),
+        generic_validators=generic_validators,
     )
 
 
@@ -84,12 +83,16 @@ def get_parser_with_no_defaults(
     Raises:
         TypeError: When value could not be parsed
         KeyError: When an attribute could not be found in the value
+        LookupError: When a core validator is overridden
     """
+
+    if any(k in CORE_GENERIC_VALIDATORS for k in (generic_validators or {})):
+        raise LookupError()
 
     def partial_parse(target_type: type[T]) -> Callable[[Any], T]:
         parse_optional = _get_parse_factory(
             matchers,
-            generic_validators or {},
+            CORE_GENERIC_VALIDATORS | (generic_validators or {}),
         )(target_type)
 
         def parse(value: Any) -> T:

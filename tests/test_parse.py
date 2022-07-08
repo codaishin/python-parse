@@ -4,7 +4,13 @@ from datetime import date
 from typing import Any, Generic, Optional
 from unittest.mock import Mock, call
 
-from python_parse.parse import KEY_ERROR_MSG, TYPE_ERROR_MSG, get_parser
+from python_parse.parse import (
+    DEFAULT_MATCHERS,
+    KEY_ERROR_MSG,
+    TYPE_ERROR_MSG,
+    get_parser,
+    get_parser_with_no_defaults,
+)
 from python_parse.types import NoMatch, T
 
 from tests.test import UnitTests
@@ -471,3 +477,45 @@ def _(test: TestGetParser) -> None:
 
     person = to_person({"data": ["33", 33, True]})
     test.assertEqual(person.data, ("33", 33, True))
+
+
+class TestGetParserWithNoDefault(UnitTests):
+    """test get_parser_with_no_default"""
+
+
+@TestGetParserWithNoDefault.describe("also uses default generic validators")
+def _(test: TestGetParserWithNoDefault) -> None:
+    @dataclass
+    class _Person:
+        data_t: tuple[str, int, bool]
+        data_l: list[int]
+        data_d: dict[bool, str]
+
+    to_person = get_parser_with_no_defaults(matchers=DEFAULT_MATCHERS)(_Person)
+
+    person = to_person(
+        {
+            "data_t": ["33", 33, True],
+            "data_l": [1, 2, 3],
+            "data_d": {True: "true", False: "false"},
+        }
+    )
+    test.assertEqual(person.data_t, ("33", 33, True))
+    test.assertEqual(person.data_l, [1, 2, 3])
+    test.assertEqual(person.data_d, {True: "true", False: "false"})
+
+
+@TestGetParserWithNoDefault.describe("overriding core generic validators")
+def _(test: TestGetParserWithNoDefault) -> None:
+    @dataclass
+    class _Person:
+        data_t: tuple[str, int, bool]
+        data_l: list[int]
+        data_d: dict[bool, str]
+
+    for g_type in (tuple, list, dict):
+        with test.subTest(f"overriding {g_type} raises"):
+            with test.assertRaises(LookupError):
+                _ = get_parser_with_no_defaults(
+                    generic_validators={g_type: Mock()}
+                )

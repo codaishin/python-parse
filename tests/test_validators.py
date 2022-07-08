@@ -4,7 +4,6 @@ from typing import Any
 
 from python_parse.parse import get_parser_with_no_defaults
 from python_parse.types import LazyMatch, TGetParse
-from python_parse.validators import validate_dict, validate_iterable
 
 from .test import UnitTests
 
@@ -22,10 +21,7 @@ def _(test: TestValidators) -> None:
 
         return resolve
 
-    parser = get_parser_with_no_defaults(
-        matchers=(make_tuple,),
-        generic_validators={tuple: validate_iterable},
-    )
+    parser = get_parser_with_no_defaults(matchers=(make_tuple,))
     # mypy, why? Why?!?!?!?!
     to_tuple = parser(tuple[int, int])  # type: ignore
     with test.assertRaises(TypeError):
@@ -41,10 +37,7 @@ def _(test: TestValidators) -> None:
 
         return resolve
 
-    parser = get_parser_with_no_defaults(
-        matchers=(make_tuple,),
-        generic_validators={tuple: validate_iterable},
-    )
+    parser = get_parser_with_no_defaults(matchers=(make_tuple,))
     # mypy, why? Why?!?!?!?!
     to_tuple = parser(tuple[int, str])  # type: ignore
     result = to_tuple(object())
@@ -60,10 +53,7 @@ def _(test: TestValidators) -> None:
 
         return resolve
 
-    parser = get_parser_with_no_defaults(
-        matchers=(make_tuple,),
-        generic_validators={tuple: validate_iterable},
-    )
+    parser = get_parser_with_no_defaults(matchers=(make_tuple,))
     to_tuple = parser(tuple[int, ...])
     result = to_tuple(object())
     test.assertEqual(result, (1, 2, 3, 4))
@@ -78,10 +68,7 @@ def _(test: TestValidators) -> None:
 
         return resolve
 
-    parser = get_parser_with_no_defaults(
-        matchers=(make_list,),
-        generic_validators={list: validate_iterable},
-    )
+    parser = get_parser_with_no_defaults(matchers=(make_list,))
     to_tuple = parser(list[int])
     result = to_tuple(object())
     test.assertEqual(result, [1, 2, 3, 4])
@@ -96,10 +83,7 @@ def _(test: TestValidators) -> None:
 
         return resolve
 
-    parser = get_parser_with_no_defaults(
-        matchers=(make_list,),
-        generic_validators={dict: validate_dict},
-    )
+    parser = get_parser_with_no_defaults(matchers=(make_list,))
     to_tuple = parser(dict[str, int])
     with test.assertRaises(TypeError):
         __ = to_tuple(object())
@@ -114,10 +98,7 @@ def _(test: TestValidators) -> None:
 
         return resolve
 
-    parser = get_parser_with_no_defaults(
-        matchers=(make_list,),
-        generic_validators={dict: validate_dict},
-    )
+    parser = get_parser_with_no_defaults(matchers=(make_list,))
     to_tuple = parser(dict[str, int])
     result = to_tuple(object())
     test.assertEqual(result, {"key": 40, "other key": 2})
